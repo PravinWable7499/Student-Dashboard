@@ -1,0 +1,6 @@
+Flask
+pyodbc
+psycopg2-binary
+gunicorn
+werkzeug
+python-dotenv

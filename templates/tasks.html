@@ -1,0 +1,137 @@
+{% extends 'base_student.html' %}
+{% block title %}Tasks{% endblock %}
+{% block page_title %}Tasks{% endblock %}
+{% block breadcrumb %}Tasks{% endblock %}
+
+{% block content %}
+<style>
+    .toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; gap: 12px; flex-wrap: wrap; }
+    .page-title { font-size: 22px; font-weight: 700; margin: 0; }
+    .toolbar-actions { display: flex; align-items: center; gap: 8px; }
+    
+    .btn { padding: 8px 14px; border: 1px solid #d0d7de; background: #ffffff; border-radius: 6px; font-size: 14px; cursor: pointer; color: #1f2328; }
+    .btn:hover { background: #f6f8fa; }
+    .btn-primary { background: #2f6feb; color: #fff; border-color: #2f6feb; }
+    .btn-primary:hover { background: #2557c4; }
+
+    /* Timer Controls */
+    .header-timer { display: flex; align-items: center; gap: 8px; margin-right: 8px; background: #fff; padding: 4px 8px; border-radius: 6px; border: 1px solid #d0d7de; }
+    .timer-text { font-size: 14px; font-weight: 700; color: #1f2328; font-variant-numeric: tabular-nums; display: none; }
+    .timer-text.active { display: inline-block; }
+    .timer-buttons { display: flex; gap: 4px; }
+    .icon-btn { width: 28px; height: 28px; border-radius: 6px; border: 1px solid #d0d7de; background: #ffffff; color: #2f6feb; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.15s; }
+    .icon-btn:hover { background: #eaf2ff; }
+    #playBtn { background: #eaf2ff; color: #2f6feb; border-color: #2f6feb; }
+    #pauseBtn { background: #fff8c5; color: #7d4e00; border-color: #d4a72c; }
+    #stopBtn { background: #ffebe9; color: #cf222e; border-color: #ffcecb; }
+    .task-select { padding: 4px; border: 1px solid #d0d7de; border-radius: 4px; font-size: 12px; max-width: 150px; margin-right: 4px; }
+
+    /* Table */
+    .table-wrap { background: #ffffff; border: 1px solid #d0d7de; border-radius: 8px; overflow-x: auto; }
+    .task-table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 1000px; }
+    .task-table thead th { text-align: left; padding: 12px 14px; background: #f6f8fa; border-bottom: 1px solid #d0d7de; font-weight: 600; color: #57606a; white-space: nowrap; }
+    .task-table tbody td { padding: 12px 14px; border-bottom: 1px solid #eaeef2; vertical-align: middle; }
+    .task-table tbody tr:last-child td { border-bottom: none; }
+    .task-table tbody tr:hover { background: #f9fbfd; }
+
+    .status-badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+    .status-pending { background: #fff8c5; color: #7d4e00; }
+    .status-in-progress { background: #ddf4ff; color: #0a3069; }
+    .status-completed { background: #dafbe1; color: #116329; }
+    .status-pending-approval { background: #EFF6FF; color: #2563EB; }
+
+    .empty-state { padding: 40px 20px; text-align: center; color: #57606a; font-size: 14px; display: none; }
+    .empty-state.show { display: block; }
+
+    /* Modal */
+    .modal { position: fixed; inset: 0; background: rgba(31, 35, 40, 0.45); display: flex; align-items: center; justify-content: center; z-index: 5000; padding: 20px; }
+    .modal.hidden { display: none; }
+    .modal-card { background: #fff; border-radius: 10px; width: 100%; max-width: 520px; padding: 20px 24px 24px; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2); }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .modal-header h2 { margin: 0; font-size: 18px; }
+    .modal-close { border: none; background: transparent; font-size: 22px; cursor: pointer; color: #57606a; }
+    .modal-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #57606a; margin-bottom: 12px; }
+    .modal-form input, .modal-form select { padding: 8px 10px; border: 1px solid #d0d7de; border-radius: 6px; font-size: 14px; color: #1f2328; outline: none; }
+    .modal-form input:focus, .modal-form select:focus { border-color: #2f6feb; box-shadow: 0 0 0 2px #eaf2ff; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+</style>
+
+<header class="toolbar">
+    <h1 class="page-title">Tasks</h1>
+    
+    <div class="toolbar-actions">
+        <!-- INLINE TIMER CONTROLS -->
+        <div class="header-timer">
+            <select id="timerTaskSelect" class="task-select">
+                <option value="">Select task to track...</option>
+            </select>
+            <span id="timerDisplay" class="timer-text">00:00:00</span>
+            <div id="timerButtons" class="timer-buttons">
+                <button id="playBtn" class="icon-btn" title="Start Timer">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,4 20,12 6,20"></polygon></svg>
+                </button>
+            </div>
+        </div>
+
+        <button id="addTaskBtn" class="btn btn-primary">+ Add Task</button>
+    </div>
+</header>
+
+<section class="table-wrap">
+    <table class="task-table">
+        <thead>
+            <tr>
+                <th>Code</th>
+                <th>Task</th>
+                <th>Completed On</th>
+                <th>Start Date</th>
+                <th>Due Date</th>
+                <th>Estimated Time</th>
+                <th>Hours Logged</th>
+                <th>Assigned To</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody id="taskTableBody">
+            <!-- Rendered by JS -->
+        </tbody>
+    </table>
+    <div id="emptyState" class="empty-state">
+        No tasks yet. Click <strong>+ Add Task</strong> to create one.
+    </div>
+</section>
+
+<!-- MODAL -->
+<div id="taskModal" class="modal hidden">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h2 id="modalTitle">Add Task</h2>
+            <button class="modal-close" id="modalClose">&times;</button>
+        </div>
+        <form id="taskForm" class="modal-form">
+            <input type="hidden" id="taskId" />
+            <label>Task Name *
+                <input type="text" id="taskTitle" required placeholder="e.g. Fix login bug" />
+            </label>
+            <label>Assigned To
+                <select id="taskAssignee">
+                    <option value="">Select a student...</option>
+                </select>
+            </label>
+            <div class="form-row">
+                <label>Start Date <input type="date" id="taskStart" disabled title="Automatically set to today" /></label>
+                <label>Due Date <input type="date" id="taskDue" /></label>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn" id="cancelBtn">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save Task</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/tasks.js') }}"></script>
+{% endblock %}

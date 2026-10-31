@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Campus Portal - {% block title %}Dashboard{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard_student.css') }}">
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+        <div class="brand">
+            <div class="brand-icon"><i class="fa-solid fa-building-columns"></i></div>
+            <div class="brand-text">
+                <h2>Campus Portal</h2>
+                <span>STUDENT WORKSPACE</span>
+            </div>
+            <button type="button" class="mobile-menu-toggle" id="mobileMenuToggle"
+                    aria-label="Open navigation menu" aria-controls="studentNav" aria-expanded="false">
+                <i class="fa-solid fa-bars" aria-hidden="true"></i>
+                <span>Menu</span>
+            </button>
+        </div>
+        
+        <nav class="nav-menu" id="studentNav">
+            <a href="/dashboard_student" class="nav-item {% if '/dashboard_student' in request.path %}active{% endif %}"><i class="fa-solid fa-house"></i> Dashboard</a>
+            <a href="/calendar" class="nav-item {% if '/calendar' in request.path %}active{% endif %}"><i class="fa-regular fa-calendar-days"></i> Calendar & Holidays</a>
+            <a href="/leave" class="nav-item {% if '/leave' in request.path %}active{% endif %}"><i class="fa-regular fa-calendar-xmark"></i> Leave</a>
+            <a href="/attendance" class="nav-item {% if '/attendance' in request.path %}active{% endif %}"><i class="fa-solid fa-clock-rotate-left"></i> Attendance</a>
+            <a href="/tasks" class="nav-item {% if '/tasks' in request.path %}active{% endif %}"><i class="fa-solid fa-list-check"></i> Tasks</a>
+            <a href="/performance" class="nav-item {% if '/performance' in request.path %}active{% endif %}"><i class="fa-solid fa-chart-line"></i> Performance</a>
+            <a href="/timetable" class="nav-item {% if '/timetable' in request.path %}active{% endif %}"><i class="fa-regular fa-clock"></i> Timetable</a>
+            <a href="/security" class="nav-item {% if '/security' in request.path %}active{% endif %}"><i class="fa-solid fa-key"></i> Security</a>
+            <a href="/student_profile" class="nav-item {% if '/student_profile' in request.path %}active{% endif %}"><i class="fa-solid fa-user"></i> My Profile</a>
+        </nav>
+        
+        <div class="sidebar-bottom">
+            <a href="/logout" class="nav-item logout-link">
+                <i class="fa-solid fa-right-from-bracket"></i> Logout
+            </a>
+        </div>
+
+        <div class="sidebar-footer">
+            <div class="status-indicator"><span class="dot"></span> Portal services</div>
+            <div class="status-text">Ready</div>
+        </div>
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <main class="main-content">
+        <header class="topbar">
+            <div class="topbar-left">
+                <h1>{% block page_title %}Dashboard{% endblock %}</h1>
+                <span class="breadcrumb-sep">Home &bull; {% block breadcrumb %}Dashboard{% endblock %}</span>
+            </div>
+        </header>
+
+        <div class="page-content">
+            {% block content %}{% endblock %}
+        </div>
+    </main>
+
+    <script>
+        // --- GLOBAL CLOCK OUT LOGIC ---
+        async function globalPostAttendance(url) {
+            try {
+                const res = await fetch(url, { method: 'POST' });
+                const data = await res.json();
+
+                if (!data.success) {
+                    alert(data.message || 'Something went wrong.');
+                    return;
+                }
+                window.location.reload();
+            } catch (err) {
+                console.error(err);
+                alert('Network error. Please try again.');
+            }
+        }
+
+        function globalClockIn() { return globalPostAttendance('/api/clock_in'); }
+        function globalClockOut() { return globalPostAttendance('/api/clock_out'); }
+    </script>
+    <script>
+        (() => {
+            const sidebar = document.querySelector('.sidebar');
+            const toggle = document.getElementById('mobileMenuToggle');
+            const nav = document.getElementById('studentNav');
+            if (!sidebar || !toggle || !nav) return;
+
+            const closeMenu = () => {
+                sidebar.classList.remove('mobile-nav-open');
+                toggle.setAttribute('aria-expanded', 'false');
+                toggle.setAttribute('aria-label', 'Open navigation menu');
+                toggle.querySelector('i').className = 'fa-solid fa-bars';
+                toggle.querySelector('span').textContent = 'Menu';
+            };
+
+            toggle.addEventListener('click', () => {
+                const isOpen = sidebar.classList.toggle('mobile-nav-open');
+                toggle.setAttribute('aria-expanded', String(isOpen));
+                toggle.setAttribute('aria-label', isOpen ? 'Close navigation menu' : 'Open navigation menu');
+                toggle.querySelector('i').className = `fa-solid ${isOpen ? 'fa-xmark' : 'fa-bars'}`;
+                toggle.querySelector('span').textContent = isOpen ? 'Close' : 'Menu';
+            });
+
+            nav.addEventListener('click', event => {
+                if (event.target.closest('.nav-item')) closeMenu();
+            });
+            document.addEventListener('click', event => {
+                if (!sidebar.contains(event.target)) closeMenu();
+            });
+            document.addEventListener('keydown', event => {
+                if (event.key === 'Escape' && sidebar.classList.contains('mobile-nav-open')) {
+                    closeMenu();
+                    toggle.focus();
+                }
+            });
+            window.addEventListener('resize', () => {
+                if (window.innerWidth > 768) closeMenu();
+            });
+        })();
+    </script>
+    
+    {% block extra_js %}{% endblock %}
+</body>
+</html>
