@@ -135,6 +135,9 @@ def active_attendance_for_day(day):
     } for row in rows]
 
 
+@app.route("/health")
+def health():
+    return "ok"
 # ---------------------------------------------------------------- auth
 @app.route("/")
 def login_page():
