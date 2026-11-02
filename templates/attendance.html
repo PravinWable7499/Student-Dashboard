@@ -20,7 +20,14 @@
     </div>
     <table class="data-table">
         <thead>
-            <tr><th>DATE</th><th>CLOCK IN (IST)</th><th>CLOCK OUT (IST)</th><th>DURATION</th><th>STATUS</th></tr>
+            <tr>
+                <th>DATE</th>
+                <th>CLOCK IN (IST)</th>
+                <th>CLOCK OUT (IST)</th>
+                <th>DURATION</th>
+                <th>STATUS</th>
+                <th>LOCATION</th>
+            </tr>
         </thead>
         <tbody>
             {% for r in records %}
@@ -30,9 +37,28 @@
                 <td>{{ r.clock_out_time.strftime('%I:%M:%S %p').lower() if r.clock_out_time else '--:--:--' }}</td>
                 <td>{{ r.working_hours if r.working_hours else '00:00:00' }}</td>
                 <td><span class="badge {% if r.clock_out_time %}completed{% else %}in_progress{% endif %}">{{ 'Complete' if r.clock_out_time else 'Active' }}</span></td>
+                <td>
+                    <div style="display: flex; flex-direction: column; gap: 4px;">
+                        {% if r.in_lat and r.in_lng %}
+                            <a href="https://www.google.com/maps?q={{ r.in_lat }},{{ r.in_lng }}" target="_blank" style="color:#3B82F6; text-decoration:none; font-weight:600; font-size: 0.85rem;">
+                                <i class="fa-solid fa-location-dot"></i> Clock In
+                            </a>
+                        {% else %}
+                            <span style="color:#94A3B8; font-size: 0.85rem;">—</span>
+                        {% endif %}
+                        
+                        {% if r.clock_out_time and r.out_lat and r.out_lng %}
+                            <a href="https://www.google.com/maps?q={{ r.out_lat }},{{ r.out_lng }}" target="_blank" style="color:#10B981; text-decoration:none; font-weight:600; font-size: 0.85rem;">
+                                <i class="fa-solid fa-location-dot"></i> Clock Out
+                            </a>
+                        {% elif r.clock_out_time %}
+                            <span style="color:#94A3B8; font-size: 0.85rem;">Clock Out: No location</span>
+                        {% endif %}
+                    </div>
+                </td>
             </tr>
             {% else %}
-            <tr><td colspan="5" style="text-align: center; color: #64748B;">No attendance records found.</td></tr>
+            <tr><td colspan="6" style="text-align: center; color: #64748B;">No attendance records found.</td></tr>
             {% endfor %}
         </tbody>
     </table>

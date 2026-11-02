@@ -1,3 +1,4 @@
+// static/js/dashboard_admin.js
 (() => {
   const $ = id => document.getElementById(id);
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -154,7 +155,6 @@
       ? `<table><thead><tr><th>Student</th><th>Type</th><th>Dates</th><th>Action</th></tr></thead><tbody>${pending.map(l =>
           `<tr><td>${esc(l.student)}</td><td>${esc(l.type)}</td><td>${l.start} &rarr; ${l.end}</td><td>${leaveActions(l.id)}</td></tr>`).join('')}</tbody></table>`
       : '<p class="legend">No pending leave requests.</p>';
-
   }
 
   // --- LEAVES ---
@@ -228,18 +228,48 @@
           student: students.find(s => String(s.id) === studentId)?.name || 'Unknown student',
           date: `${d.year}-${pad(d.month)}-${pad(Number(day))}`,
           times,
-          status: (d.records[studentId] || {})[day] || 'Present'
+          status: (d.records[studentId] || {})[day] || 'Present',
+          in_lat: times.inLat,
+          in_lng: times.inLng,
+          out_lat: times.outLat,
+          out_lng: times.outLng
         });
       });
     });
     attendanceLogs.sort((a, b) => b.date.localeCompare(a.date) || a.student.localeCompare(b.student));
+    
+     // Helper function to generate a map link with custom colors
+    const mapLink = (lat, lng, label, color) => {
+        if (!lat || !lng) return ''; 
+        return `<a href="https://www.google.com/maps?q=${lat},${lng}" target="_blank" title="${label}" style="color:${color}; text-decoration:none; font-weight:600; font-size: 0.85rem; display: block;"><i class="fa-solid fa-location-dot"></i> ${label}</a>`;
+    };
+    
     $('attLogTable').innerHTML = attendanceLogs.length
-      ? attendanceLogs.map(log => `<tr>
-          <td>${esc(log.student)}</td><td>${log.date}</td>
-          <td>${esc(log.times.clockIn)}</td><td>${esc(log.times.clockOut || '—')}</td>
-          <td>${esc(log.status)}</td>
-        </tr>`).join('')
-      : '<tr><td colspan="5" class="legend">No attendance records for this month.</td></tr>';
+      ? attendanceLogs.map(log => {
+          let locationHtml = '';
+          
+          // 1. Clock In Location (Blue)
+          if (log.in_lat && log.in_lng) {
+              locationHtml += mapLink(log.in_lat, log.in_lng, 'Clock In', '#3B82F6');
+          } else {
+              locationHtml += '<span style="color:#94A3B8; font-size: 0.85rem; display: block;">In: —</span>';
+          }
+          
+          // 2. Clock Out Location (Green)
+          if (log.times.clockOut && log.out_lat && log.out_lng) {
+              locationHtml += mapLink(log.out_lat, log.out_lng, 'Clock Out', '#10B981');
+          } else if (log.times.clockOut) {
+              locationHtml += '<span style="color:#94A3B8; font-size: 0.85rem; display: block;">Out: No location</span>';
+          }
+
+          return `<tr>
+            <td>${esc(log.student)}</td><td>${log.date}</td>
+            <td>${esc(log.times.clockIn)}</td><td>${esc(log.times.clockOut || '—')}</td>
+            <td>${esc(log.status)}</td>
+            <td><div style="display: flex; flex-direction: column; gap: 4px;">${locationHtml}</div></td>
+          </tr>`;
+        }).join('')
+      : '<tr><td colspan="6" class="legend">No attendance records for this month.</td></tr>';
   }
 
   function renderAttendanceGrid(month, data) {
@@ -329,15 +359,12 @@
 
       let actions = '';
       if (t.status === 'pending_approval') {
-        // Waiting for student to stop timer -> Show Approve/Reject
         actions = `<button class="btn ok sm" data-approve="${t.id}">Approve</button>
                    <button class="btn no sm" data-reject="${t.id}">Reject</button>`;
       } else if (t.status === 'pending' || t.status === 'in_progress') {
-        // Open task -> Show Mark Done / Delete
         actions = `<button class="btn ok sm" data-approve="${t.id}">Mark Done</button>
                    <button class="btn no sm" data-del="${t.id}">Delete</button>`;
       } else {
-        // Already completed -> Just Delete
         actions = `<button class="btn no sm" data-del="${t.id}">Delete</button>`;
       }
 
@@ -436,7 +463,6 @@
       : '<tr><td colspan="4" class="legend" style="text-align:center;">No students found.</td></tr>';
   }
 
-  // Search functionality
   $('studentSearch')?.addEventListener('input', e => {
     const term = e.target.value.toLowerCase();
     const filtered = stuRows.filter(s => 
@@ -447,7 +473,6 @@
     renderStudentsTable(filtered);
   });
 
-  // Modal Open/Close
   function openStudentModal(isEdit, student = null) {
     $('studentModal').classList.add('active');
     $('stuForm').reset();
@@ -472,7 +497,6 @@
   $('closeModalBtn')?.addEventListener('click', closeStudentModal);
   $('cancelStuBtn')?.addEventListener('click', closeStudentModal);
 
-  // Table Edit/Delete Actions
   $('stuBody')?.addEventListener('click', async e => {
     const ed = e.target.closest('[data-edit]'), rm = e.target.closest('[data-rm]');
     if (ed) {
@@ -488,7 +512,6 @@
     }
   });
 
-  // Form Submit
   $('stuForm')?.addEventListener('submit', async e => {
     e.preventDefault();
     const body = {
