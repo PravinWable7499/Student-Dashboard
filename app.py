@@ -1,3 +1,4 @@
+import threading
 import csv
 import hmac
 import io
@@ -153,10 +154,13 @@ def active_attendance_for_day(day):
 def send_student_credentials(student_email, firstname, password):
     """Sends login credentials to the newly created student."""
     if not SMTP_USER or not SMTP_PASS:
-        print("Warning: SMTP credentials not set in .env file. Email not sent.")
+        print("Warning: SMTP credentials not set. Email not sent.")
         return False
 
     try:
+        # Clean the password (remove spaces just in case)
+        clean_pass = SMTP_PASS.replace(" ", "")
+        
         msg = MIMEText(f"""Hello {firstname},
 
 Your account has been successfully created on the Campus Portal.
@@ -176,9 +180,10 @@ Campus Portal Administration
         msg['From'] = SMTP_USER
         msg['To'] = student_email
 
-        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-        server.starttls() # Secure the connection
-        server.login(SMTP_USER, SMTP_PASS)
+        # Add timeout=10 so it doesn't freeze the app if Gmail is slow
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=10)
+        server.starttls() 
+        server.login(SMTP_USER, clean_pass) # Use the cleaned password
         server.send_message(msg)
         server.quit()
         print(f"Success: Email sent to {student_email}")
@@ -1122,8 +1127,8 @@ def admin_student_create():
         return jsonify(success=False, message="That email address is already registered."), 400
     
     # --- SEND EMAIL WITH CREDENTIALS ---
-    send_student_credentials(v["email"], v["firstname"], v["password"])
-    
+    # Run email in background so the "Save" button doesn't freeze
+    threading.Thread(target=send_student_credentials, args=(v["email"], v["firstname"], v["password"])).start()
     return jsonify(success=True)
 
 @app.route("/api/admin/student-list/<int:sid>", methods=["PUT"])
