@@ -1,3 +1,5 @@
+import sib_api_v3_sdk
+from sib_api_v3_sdk.rest import ApiException
 import threading
 import csv
 import hmac
@@ -28,6 +30,8 @@ SMTP_SERVER = os.environ.get("SMTP_SERVER", "smtp.gmail.com").strip()
 SMTP_PORT = int(os.environ.get("SMTP_PORT", 587))
 SMTP_USER = os.environ.get("SMTP_USER", "").strip()
 SMTP_PASS = os.environ.get("SMTP_PASS", "").replace(" ", "").strip()  # Remove ALL spaces
+
+BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "").strip()
 
 # ---------------------------------------------------------------- helpers
 def now_ist():
@@ -152,53 +156,65 @@ def active_attendance_for_day(day):
 
 
 def send_student_credentials(student_email, firstname, password):
-    """Sends login credentials to the newly created student."""
+    """Sends login credentials via Brevo API (Free, works for ANY email)."""
     try:
-        app.logger.info(f"=== EMAIL START: Sending to {student_email} ===")
-        app.logger.info(f"SMTP_SERVER: {SMTP_SERVER}")
-        app.logger.info(f"SMTP_USER: {SMTP_USER}")
-        app.logger.info(f"SMTP_PASS length: {len(SMTP_PASS)} characters")
-        
-        if not SMTP_USER or not SMTP_PASS:
-            app.logger.error("ERROR: SMTP credentials are empty!")
+        if not BREVO_API_KEY:
+            app.logger.warning("BREVO_API_KEY is missing. Email not sent.")
             return False
 
-        # Create email message
-        msg = MIMEText(f"""Hello {firstname},
-
-Your account has been successfully created on the Campus Portal.
-
-Username (Email): {student_email}
-Password: {password}
-
-Please log in and change your password immediately.
-
-Regards,
-Campus Portal Administration
-""")
-        msg['Subject'] = "Welcome to Campus Portal - Login Details"
-        msg['From'] = SMTP_USER
-        msg['To'] = student_email
-
-        # --- CHANGED: Use SMTP_SSL on Port 465 (More reliable on Render) ---
-        app.logger.info("Connecting to Gmail via SSL on Port 465...")
-        server = smtplib.SMTP_SSL(SMTP_SERVER, 465, timeout=15)
+        app.logger.info(f"Sending email via Brevo to {student_email}...")
         
-        app.logger.info("Logging in to Gmail...")
-        server.login(SMTP_USER, SMTP_PASS)
-        
-        app.logger.info("Sending email...")
-        server.send_message(msg)
-        server.quit()
-        
-        app.logger.info(f"=== EMAIL SUCCESS: Sent to {student_email} ===")
+        # Configure Brevo API
+        configuration = sib_api_v3_sdk.Configuration()
+        configuration.api_key['api-key'] = BREVO_API_KEY
+        api_instance = sib_api_v3_sdk.TransactionalEmailsApi(sib_api_v3_sdk.ApiClient(configuration))
+
+        # Professional HTML Email Template
+        email_html = f"""
+        <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #334155; line-height: 1.6; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #2563eb; margin-bottom: 10px;">Welcome to Campus Portal, {firstname}! </h2>
+            <p>Your student account has been successfully created. You can now access your dashboard, track your attendance, and manage your tasks.</p>
+            
+            <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #2563eb; border-radius: 8px; padding: 20px; margin: 25px 0;">
+                <p style="margin: 0 0 15px 0; font-size: 15px; color: #475569; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;">Your Login Credentials</p>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="padding: 10px 0; color: #64748b; font-weight: bold; width: 130px; vertical-align: top;">ID (Email):</td>
+                        <td style="padding: 10px 0; color: #0f172a; font-weight: bold; font-size: 14px; word-break: break-all;">{student_email}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 10px 0; color: #64748b; font-weight: bold; vertical-align: top;">Password:</td>
+                        <td style="padding: 10px 0; color: #0f172a; font-weight: bold; font-size: 14px;">{password}</td>
+                    </tr>
+                </table>
+            </div>
+
+            <p style="background-color: #fef2f2; color: #dc2626; padding: 12px; border-radius: 6px; font-size: 14px; font-weight: bold; border: 1px solid #fecaca;">
+                ⚠️ Security Notice: Please log in and change your password immediately for your account's security.
+            </p>
+            
+            <p style="margin-top: 30px; color: #64748b; font-size: 14px;">If you have any questions or did not request this account, please contact your administrator immediately.</p>
+            <p style="margin-top: 20px;">Best regards,<br><strong>Campus Portal Administration</strong></p>
+        </div>
+        """
+
+        send_smtp_email = sib_api_v3_sdk.SendSmtpEmail(
+            to=[{"email": student_email, "name": firstname}],
+            sender={"email": "pravinw.ek@gmail.com", "name": "Campus Portal"}, # Your verified sender
+            subject="Welcome to Campus Portal - Your Login Details",
+            html_content=email_html
+        )
+
+        # Send the email
+        api_response = api_instance.send_transac_email(send_smtp_email)
+        app.logger.info(f"✅ SUCCESS: Email sent via Brevo. ID: {api_response.message_id}")
         return True
-        
-    except smtplib.SMTPAuthenticationError:
-        app.logger.error("GMAIL AUTH FAILED: Check SMTP_PASS")
+
+    except ApiException as e:
+        app.logger.error(f" BREVO API ERROR: {e}")
         return False
     except Exception as e:
-        app.logger.error(f"EMAIL FAILED: {str(e)}")
+        app.logger.error(f" EMAIL FAILED: {str(e)}")
         return False
     
 # ---------------------------------------------------------------- health check
