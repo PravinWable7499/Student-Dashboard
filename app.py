@@ -156,7 +156,6 @@ def send_student_credentials(student_email, firstname, password):
     try:
         app.logger.info(f"=== EMAIL START: Sending to {student_email} ===")
         app.logger.info(f"SMTP_SERVER: {SMTP_SERVER}")
-        app.logger.info(f"SMTP_PORT: {SMTP_PORT}")
         app.logger.info(f"SMTP_USER: {SMTP_USER}")
         app.logger.info(f"SMTP_PASS length: {len(SMTP_PASS)} characters")
         
@@ -181,11 +180,9 @@ Campus Portal Administration
         msg['From'] = SMTP_USER
         msg['To'] = student_email
 
-        # Connect to Gmail with timeout
-        app.logger.info("Connecting to Gmail SMTP server...")
-        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=15)
-        server.set_debuglevel(0)  # Set to 1 if you want detailed debug logs
-        server.starttls()
+        # --- CHANGED: Use SMTP_SSL on Port 465 (More reliable on Render) ---
+        app.logger.info("Connecting to Gmail via SSL on Port 465...")
+        server = smtplib.SMTP_SSL(SMTP_SERVER, 465, timeout=15)
         
         app.logger.info("Logging in to Gmail...")
         server.login(SMTP_USER, SMTP_PASS)
@@ -198,10 +195,7 @@ Campus Portal Administration
         return True
         
     except smtplib.SMTPAuthenticationError:
-        app.logger.error("GMAIL AUTH FAILED: Check SMTP_PASS - it might be wrong or expired")
-        return False
-    except smtplib.SMTPConnectError:
-        app.logger.error("GMAIL CONNECTION FAILED: Check SMTP_SERVER and SMTP_PORT")
+        app.logger.error("GMAIL AUTH FAILED: Check SMTP_PASS")
         return False
     except Exception as e:
         app.logger.error(f"EMAIL FAILED: {str(e)}")
