@@ -23,11 +23,11 @@ app.secret_key = os.environ.get("SMS_SECRET_KEY", "change-this-secret-key")
 IST = timezone(timedelta(hours=5, minutes=30))
 LEAVE_TYPES = {"Sick Leave", "Casual Leave"}
 
-# Email Settings
-SMTP_SERVER = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
+# Email Settings - Auto-clean any accidental spaces
+SMTP_SERVER = os.environ.get("SMTP_SERVER", "smtp.gmail.com").strip()
 SMTP_PORT = int(os.environ.get("SMTP_PORT", 587))
-SMTP_USER = os.environ.get("SMTP_USER", "")
-SMTP_PASS = os.environ.get("SMTP_PASS", "")
+SMTP_USER = os.environ.get("SMTP_USER", "").strip()
+SMTP_PASS = os.environ.get("SMTP_PASS", "").replace(" ", "").strip()  # Remove ALL spaces
 
 # ---------------------------------------------------------------- helpers
 def now_ist():
@@ -153,45 +153,60 @@ def active_attendance_for_day(day):
 
 def send_student_credentials(student_email, firstname, password):
     """Sends login credentials to the newly created student."""
-    if not SMTP_USER or not SMTP_PASS:
-        print("Warning: SMTP credentials not set. Email not sent.")
-        return False
-
     try:
-        # Clean the password (remove spaces just in case)
-        clean_pass = SMTP_PASS.replace(" ", "")
+        app.logger.info(f"=== EMAIL START: Sending to {student_email} ===")
+        app.logger.info(f"SMTP_SERVER: {SMTP_SERVER}")
+        app.logger.info(f"SMTP_PORT: {SMTP_PORT}")
+        app.logger.info(f"SMTP_USER: {SMTP_USER}")
+        app.logger.info(f"SMTP_PASS length: {len(SMTP_PASS)} characters")
         
+        if not SMTP_USER or not SMTP_PASS:
+            app.logger.error("ERROR: SMTP credentials are empty!")
+            return False
+
+        # Create email message
         msg = MIMEText(f"""Hello {firstname},
 
 Your account has been successfully created on the Campus Portal.
 
-Here are your login credentials:
---------------------------------
 Username (Email): {student_email}
 Password: {password}
---------------------------------
 
-Please log in and change your password immediately for security purposes.
+Please log in and change your password immediately.
 
 Regards,
 Campus Portal Administration
 """)
-        msg['Subject'] = "Welcome to Campus Portal - Your Login Details"
+        msg['Subject'] = "Welcome to Campus Portal - Login Details"
         msg['From'] = SMTP_USER
         msg['To'] = student_email
 
-        # Add timeout=10 so it doesn't freeze the app if Gmail is slow
-        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=10)
-        server.starttls() 
-        server.login(SMTP_USER, clean_pass) # Use the cleaned password
+        # Connect to Gmail with timeout
+        app.logger.info("Connecting to Gmail SMTP server...")
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=15)
+        server.set_debuglevel(0)  # Set to 1 if you want detailed debug logs
+        server.starttls()
+        
+        app.logger.info("Logging in to Gmail...")
+        server.login(SMTP_USER, SMTP_PASS)
+        
+        app.logger.info("Sending email...")
         server.send_message(msg)
         server.quit()
-        print(f"Success: Email sent to {student_email}")
+        
+        app.logger.info(f"=== EMAIL SUCCESS: Sent to {student_email} ===")
         return True
-    except Exception as e:
-        print(f"Failed to send email to {student_email}: {e}")
+        
+    except smtplib.SMTPAuthenticationError:
+        app.logger.error("GMAIL AUTH FAILED: Check SMTP_PASS - it might be wrong or expired")
         return False
-
+    except smtplib.SMTPConnectError:
+        app.logger.error("GMAIL CONNECTION FAILED: Check SMTP_SERVER and SMTP_PORT")
+        return False
+    except Exception as e:
+        app.logger.error(f"EMAIL FAILED: {str(e)}")
+        return False
+    
 # ---------------------------------------------------------------- health check
 @app.route("/health")
 def health():
