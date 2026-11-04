@@ -417,7 +417,7 @@
     renderHolidays();
   }
   
-  function renderHolidays() {
+    function renderHolidays() {
     const y = holView.getFullYear(), m = holView.getMonth();
     $('holMonth').textContent = `${MONTHS[m]} ${y}`;
     const lead = (new Date(y, m, 1).getDay() + 6) % 7;
@@ -426,27 +426,19 @@
     for (let i = 0; i < lead; i++) h += '<div class="day other"></div>';
     for (let d = 1; d <= dim; d++) {
       const key = iso(y, m, d);
-      h += `<div class="day ${key === todayIso ? 'today' : ''}" data-date="${key}">${d}${holidays[key] ? `<span class="hol">${esc(holidays[key])}</span>` : ''}</div>`;
+      const dayOfWeek = new Date(y, m, d).getDay();
+      const isSunday = dayOfWeek === 0;
+      const isHoliday = holidays[key];
+      
+      let dayClass = 'day';
+      if (key === todayIso) dayClass += ' today';
+      if (isSunday) dayClass += ' sunday';
+      if (isHoliday) dayClass += ' holiday';
+      
+      h += `<div class="${dayClass}" data-date="${key}">${d}${isHoliday ? `<span class="hol">${esc(holidays[key])}</span>` : ''}${isSunday && !isHoliday ? `<span class="hol">Sunday</span>` : ''}</div>`;
     }
     $('holGrid').innerHTML = h;
   }
-  
-  $('prev')?.addEventListener('click', () => { holView.setMonth(holView.getMonth() - 1); renderHolidays(); });
-  $('next')?.addEventListener('click', () => { holView.setMonth(holView.getMonth() + 1); renderHolidays(); });
-  
-  $('holGrid')?.addEventListener('click', async e => {
-    const c = e.target.closest('.day[data-date]');
-    if (!c) return;
-    const date = c.dataset.date;
-    if (holidays[date]) {
-      if (!confirm(`Remove "${holidays[date]}" on ${date}?`)) return;
-      if (await api('/api/admin/holidays', 'DELETE', {date})) { delete holidays[date]; showToast('Holiday removed.'); renderHolidays(); }
-    } else {
-      const name = prompt(`Holiday name for ${date}:`);
-      if (!name || !name.trim()) return;
-      if (await api('/api/admin/holidays', 'POST', {date, name: name.trim()})) { holidays[date] = name.trim(); showToast('Holiday added.'); renderHolidays(); }
-    }
-  });
 
   // --- STUDENTS (MODAL & SEARCH) ---
   async function loadStudentsPage() {
