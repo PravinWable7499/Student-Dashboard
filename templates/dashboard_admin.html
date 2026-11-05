@@ -106,12 +106,19 @@
     <section id="attendance" class="page">
       <div class="card">
         <div class="bar">
+        <div class="bar">
           <label style="font-weight:600; font-size:0.9rem;">Month: <input type="month" id="attMonth" style="margin-left:8px;"></label>
           <label style="font-weight:600; font-size:0.9rem;">Student:
             <select id="attendanceStudent" style="margin-left:8px;">
               <option value="">Choose student</option>
             </select>
           </label>
+          
+          <!-- EXPORT BUTTON ADDED HERE -->
+          <button id="btnExportAttendance" class="btn sm" style="background: #10B981; color: white; margin-left: 15px;">
+            <i class="fa-solid fa-file-csv"></i> Export CSV
+          </button>
+          
           <span class="legend">Attendance is loaded from the database. Late and Half-day are calculated from each student's schedule.</span>
         </div>
         <div class="scroll">
@@ -194,7 +201,14 @@
             <input type="text" id="studentSearch" placeholder="Search by name, email...">
           </div>
           <button class="btn" id="btnAddStudent"><i class="fa-solid fa-plus"></i> Add Student</button>
-        </div>
+          <!-- Add this next to your existing Add Student button -->
+          <button class="btn" id="btnImportStudent" style="background: #10B981; color: white; margin-left: 10px;">
+              <i class="fa-solid fa-file-csv"></i> Import CSV
+          </button>
+
+          <!-- Add this hidden file input at the bottom of the body -->
+          <input type="file" id="csvFileInput" accept=".csv" style="display: none;">
+          </div>
         <table>
           <thead><tr><th>Name</th><th>Email (Username)</th><th>City</th><th>Action</th></tr></thead>
           <tbody id="stuBody"></tbody>

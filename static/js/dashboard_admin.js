@@ -543,4 +543,50 @@
   if($('todayLabel')) $('todayLabel').textContent = now.toLocaleDateString('en-GB', {weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'});
   if($('attMonth')) $('attMonth').value = now.getFullYear() + '-' + pad(now.getMonth() + 1);
   loadDashboard();
+
+
+  // --- BULK IMPORT LOGIC ---
+  $('btnImportStudent')?.addEventListener('click', () => $('csvFileInput').click());
+  
+  $('csvFileInput')?.addEventListener('change', async e => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (!confirm(`Import ${file.name}? This will create accounts and email all students.`)) {
+        e.target.value = ''; // Reset
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    showToast('Importing students... Please wait.', 'success');
+
+    const res = await fetch('/api/admin/import-students', {
+        method: 'POST',
+        body: formData // No JSON header needed for FormData
+    });
+
+    const data = await res.json();
+    e.target.value = ''; // Reset input
+
+    if (data.success) {
+        showToast(`Success! ${data.imported} students imported. ${data.errors} failed.`, 'success');
+        loadStudentsPage(); // Refresh table
+    } else {
+        showToast(data.message || 'Import failed.', 'error');
+    }
+  });
+
+    // --- EXPORT ATTENDANCE CSV ---
+  $('btnExportAttendance')?.addEventListener('click', () => {
+    const month = $('attMonth').value;
+    if (!month) {
+      showToast('Please select a month first.', 'error');
+      return;
+    }
+    // Trigger the browser to download the CSV from our backend route
+    window.location.href = `/api/admin/export-attendance?month=${month}`;
+    showToast('Downloading attendance report...', 'success');
+  });
 })();
