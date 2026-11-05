@@ -1,3 +1,5 @@
+import csv
+import io
 import sib_api_v3_sdk
 from sib_api_v3_sdk.rest import ApiException
 import threading
@@ -10,6 +12,7 @@ from datetime import datetime, date, time as dtime, timedelta, timezone
 from functools import wraps
 import smtplib
 from email.mime.text import MIMEText
+from flask import make_response
 
 import psycopg2
 from flask import (Flask, Response, g, jsonify, redirect, render_template,
@@ -842,6 +845,65 @@ def admin_students():
                "ORDER BY firstname", fetch="all")
     return jsonify([{"id": r.student_id, "name": r.name} for r in rows])
 
+@app.route("/api/admin/import-students", methods=["POST"])
+@admin
+def import_students():
+    if 'file' not in request.files:
+        return jsonify(success=False, message="No file uploaded."), 400
+    
+    file = request.files['file']
+    if not file.filename.endswith('.csv'):
+        return jsonify(success=False, message="Only CSV files are allowed."), 400
+
+    try:
+        # Read CSV file
+        stream = io.StringIO(file.stream.read().decode("UTF8"), newline=None)
+        csv_input = csv.reader(stream)
+        header = next(csv_input) # Skip the header row
+        
+        success_count = 0
+        error_count = 0
+
+        for row in csv_input:
+            if len(row) < 7: 
+                error_count += 1
+                continue
+                
+            # Expected CSV format: firstname, lastname, email, mobile, gender, dob(YYYY-MM-DD), city
+            firstname, lastname, email, mobile, gender, dob_str, city = [x.strip() for x in row]
+            
+            try:
+                dob = date.fromisoformat(dob_str)
+                birth_year = dob.strftime("%Y")
+                password = firstname + birth_year
+                password_hash = hash_pw(password)
+                username = email
+
+                # 1. Insert into Users table
+                user_id = run("INSERT INTO users (username, password_hash, role) VALUES (%s, %s, 'student') RETURNING user_id", 
+                              (username, password_hash), fetch="one").user_id
+                
+                # 2. Insert into Student table
+                run("""INSERT INTO Student (user_id, firstname, lastname, email, mobile_no, gender, dob, city) 
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+                    (user_id, firstname, lastname, email, mobile or None, gender or None, dob, city))
+
+                # 3. Send Email in Background
+                threading.Thread(
+                    target=send_student_credentials, 
+                    args=(email, firstname, password)
+                ).start()
+                
+                success_count += 1
+            except Exception as e:
+                app.logger.error(f"Failed to import row {row}: {e}")
+                error_count += 1
+
+        return jsonify(success=True, imported=success_count, errors=error_count)
+
+    except Exception as e:
+        return jsonify(success=False, message=f"Error reading file: {str(e)}"), 500
+
 @app.route("/api/admin/leaves")
 @admin
 def admin_leaves():
@@ -957,6 +1019,46 @@ def admin_attendance():
             "startTime": r.start_time.strftime("%H:%M"),
             "endTime": r.end_time.strftime("%H:%M"),
         } for r in schedules])
+
+@app.route("/api/admin/export-attendance")
+@admin
+def export_attendance():
+    month = request.args.get('month', datetime.now().strftime('%Y-%m'))
+    
+    # Fetch data using your exact table and column names
+    rows = run("""
+        SELECT 
+            s.firstname || ' ' || s.lastname AS student_name, 
+            st.attendance_date, 
+            a.clock_in_time, 
+            a.clock_out_time, 
+            st.status
+        FROM AttendanceStatus st
+        JOIN Student s ON s.student_id = st.student_id
+        LEFT JOIN Attendance a ON a.student_id = st.student_id AND CAST(a.clock_in_time AS DATE) = st.attendance_date
+        WHERE TO_CHAR(st.attendance_date, 'YYYY-MM') = %s
+        ORDER BY st.attendance_date DESC, s.firstname ASC
+    """, (month,), "all")
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    # CSV Header
+    writer.writerow(['Student Name', 'Date', 'Clock In', 'Clock Out', 'Status'])
+    
+    # CSV Rows
+    for r in rows:
+        clock_in = r.clock_in_time.strftime('%H:%M:%S') if r.clock_in_time else ''
+        clock_out = r.clock_out_time.strftime('%H:%M:%S') if r.clock_out_time else ''
+        date_str = r.attendance_date.strftime('%Y-%m-%d') if hasattr(r.attendance_date, 'strftime') else str(r.attendance_date)
+        
+        writer.writerow([r.student_name, date_str, clock_in, clock_out, r.status])
+
+    # Send file to browser
+    response = make_response(output.getvalue())
+    response.headers["Content-Disposition"] = f"attachment; filename=attendance_report_{month}.csv"
+    response.headers["Content-type"] = "text/csv"
+    return response
 
 @app.route("/api/admin/attendance/schedules", methods=["POST"])
 @admin
