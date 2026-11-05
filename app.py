@@ -216,6 +216,109 @@ def send_student_credentials(student_email, firstname, password):
     except Exception as e:
         app.logger.error(f" EMAIL FAILED: {str(e)}")
         return False
+
+
+def send_leave_status_email(student_email, firstname, leave_type, status, start_date, end_date):
+    """Sends an email to the student when their leave is approved or rejected."""
+    try:
+        if not BREVO_API_KEY:
+            return False
+
+        # Format dates nicely (e.g., "05 Nov 2026")
+        start_str = start_date.strftime('%d %b %Y') if hasattr(start_date, 'strftime') else str(start_date)
+        end_str = end_date.strftime('%d %b %Y') if hasattr(end_date, 'strftime') else str(end_date)
+
+        # Determine colors and icons based on status
+        if status == 'Approved':
+            color = '#10B981' # Green
+            icon = '✅'
+            msg = "Great news! Your leave request has been approved."
+        else:
+            color = '#EF4444' # Red
+            icon = '❌'
+            msg = "Unfortunately, your leave request has been rejected."
+
+        email_html = f"""
+        <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #334155; line-height: 1.6; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: {color}; margin-bottom: 10px;">{icon} Leave Request {status}</h2>
+            <p>Hello {firstname},</p>
+            <p>{msg}</p>
+            
+            <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid {color}; border-radius: 8px; padding: 20px; margin: 25px 0;">
+                <p style="margin: 0 0 10px 0; font-weight: bold; color: #475569;">Leave Details:</p>
+                <p style="margin: 5px 0;"><strong>Type:</strong> {leave_type}</p>
+                <p style="margin: 5px 0;"><strong>Duration:</strong> {start_str} to {end_str}</p>
+            </div>
+
+            <p style="margin-top: 20px;">If you have any questions regarding this decision, please contact your administrator.</p>
+            <p>Best regards,<br><strong>Campus Portal Administration</strong></p>
+        </div>
+        """
+
+        configuration = sib_api_v3_sdk.Configuration()
+        configuration.api_key['api-key'] = BREVO_API_KEY
+        api_instance = sib_api_v3_sdk.TransactionalEmailsApi(sib_api_v3_sdk.ApiClient(configuration))
+
+        send_smtp_email = sib_api_v3_sdk.SendSmtpEmail(
+            to=[{"email": student_email, "name": firstname}],
+            sender={"email": "pravinw.ek@gmail.com", "name": "Campus Portal"},
+            subject=f"Leave Request {status} - Campus Portal",
+            html_content=email_html
+        )
+
+        api_instance.send_transac_email(send_smtp_email)
+        app.logger.info(f"✅ Leave status email sent to {student_email} ({status})")
+        return True
+
+    except Exception as e:
+        app.logger.error(f"❌ Failed to send leave email: {e}")
+        return False
+
+
+def send_task_assignment_email(student_email, firstname, task_title, due_date):
+    """Sends an email to the student when a new task is assigned."""
+    try:
+        if not BREVO_API_KEY:
+            return False
+
+        # Format date nicely
+        due_str = due_date.strftime('%d %b %Y') if hasattr(due_date, 'strftime') else str(due_date)
+
+        email_html = f"""
+        <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #334155; line-height: 1.6; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #3B82F6; margin-bottom: 10px;">📋 New Task Assigned</h2>
+            <p>Hello {firstname},</p>
+            <p>A new task has been assigned to you on the Campus Portal.</p>
+            
+            <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #3B82F6; border-radius: 8px; padding: 20px; margin: 25px 0;">
+                <p style="margin: 0 0 10px 0; font-weight: bold; color: #475569;">Task Details:</p>
+                <p style="margin: 5px 0;"><strong>Title:</strong> {task_title}</p>
+                <p style="margin: 5px 0;"><strong>Due Date:</strong> {due_str}</p>
+            </div>
+
+            <p style="margin-top: 20px;">Please log in to your dashboard to view the full details and start working on it.</p>
+            <p>Best regards,<br><strong>Campus Portal Administration</strong></p>
+        </div>
+        """
+
+        configuration = sib_api_v3_sdk.Configuration()
+        configuration.api_key['api-key'] = BREVO_API_KEY
+        api_instance = sib_api_v3_sdk.TransactionalEmailsApi(sib_api_v3_sdk.ApiClient(configuration))
+
+        send_smtp_email = sib_api_v3_sdk.SendSmtpEmail(
+            to=[{"email": student_email, "name": firstname}],
+            sender={"email": "pravinw.ek@gmail.com", "name": "Campus Portal"},
+            subject=f"New Task Assigned: {task_title} - Campus Portal",
+            html_content=email_html
+        )
+
+        api_instance.send_transac_email(send_smtp_email)
+        app.logger.info(f"✅ Task assignment email sent to {student_email}")
+        return True
+
+    except Exception as e:
+        app.logger.error(f"❌ Failed to send task email: {e}")
+        return False
     
 # ---------------------------------------------------------------- health check
 @app.route("/health")
@@ -763,11 +866,31 @@ def admin_leaves():
 
 @app.route("/api/admin/leaves/<int:leave_id>", methods=["POST"])
 @admin
-def admin_decide_leave(leave_id):
-    status = (request.get_json(silent=True) or {}).get("status")
-    if status not in ("Approved", "Rejected"):
+def admin_leave_action(leave_id):
+    data = request.get_json(silent=True) or {}
+    status = data.get("status")
+    
+    if status not in ["Approved", "Rejected"]:
         return jsonify(success=False, message="Invalid status."), 400
+
+    # 1. Update the database
     run("UPDATE LeaveRequest SET status=%s WHERE leave_id=%s", (status, leave_id))
+
+    # 2. Fetch student and leave details to send the email
+    row = run("""
+        SELECT s.firstname, s.email, l.leave_type, l.start_date, l.end_date 
+        FROM LeaveRequest l 
+        JOIN Student s ON s.student_id = l.student_id 
+        WHERE l.leave_id = %s
+    """, (leave_id,), "one")
+
+    # 3. Send the email in the background (so the admin UI doesn't freeze)
+    if row:
+        threading.Thread(
+            target=send_leave_status_email, 
+            args=(row.email, row.firstname, row.leave_type, status, row.start_date, row.end_date)
+        ).start()
+
     return jsonify(success=True)
 
 @app.route("/api/admin/attendance", methods=["GET"])
@@ -874,9 +997,21 @@ def admin_tasks():
             return jsonify(success=False, message="Choose a student and a valid due date."), 400
         if not title or len(title) > 255:
             return jsonify(success=False, message="Enter a title (max 255 characters)."), 400
+            
+        # 1. Save the task to the database
         run("INSERT INTO Task (student_id, title, description, due_date) VALUES (%s, %s, %s, %s)",
             (sid, title, (d.get("description") or "").strip() or None, due))
+
+        # 2. Fetch student details and send email in the background
+        student = run("SELECT firstname, email FROM Student WHERE student_id = %s", (sid,), "one")
+        if student:
+            threading.Thread(
+                target=send_task_assignment_email, 
+                args=(student.email, student.firstname, title, due)
+            ).start()
+
         return jsonify(success=True)
+    
     rows = run("SELECT t.task_id, t.title, t.due_date, t.status, "
                "s.firstname || ' ' || s.lastname AS name FROM Task t "
                "JOIN Student s ON s.student_id=t.student_id ORDER BY t.due_date DESC",
