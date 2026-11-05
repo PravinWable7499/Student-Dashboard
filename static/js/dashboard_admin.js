@@ -152,8 +152,14 @@
     if (!leaves) return;
     const pending = leaves.filter(l => l.status === 'Pending');
     $('dashLeaves').innerHTML = pending.length
-      ? `<table><thead><tr><th>Student</th><th>Type</th><th>Dates</th><th>Action</th></tr></thead><tbody>${pending.map(l =>
-          `<tr><td>${esc(l.student)}</td><td>${esc(l.type)}</td><td>${l.start} &rarr; ${l.end}</td><td>${leaveActions(l.id)}</td></tr>`).join('')}</tbody></table>`
+      ? `<table><thead><tr><th>Student</th><th>Type</th><th>Duration</th><th>Dates</th><th>Action</th></tr></thead><tbody>${pending.map(l =>
+          `<tr>
+            <td>${esc(l.student)}</td>
+            <td>${esc(l.type)}</td>
+            <td style="font-weight: 600; color: #2563eb;">${esc(l.duration || 'Full Day')}</td>
+            <td>${l.start} &rarr; ${l.end}</td>
+            <td>${leaveActions(l.id)}</td>
+          </tr>`).join('')}</tbody></table>`
       : '<p class="legend">No pending leave requests.</p>';
   }
 
@@ -161,22 +167,27 @@
   const leaveActions = id => `<button class="btn ok sm" data-leave="${id}" data-status="Approved">Approve</button><button class="btn no sm" data-leave="${id}" data-status="Rejected">Reject</button>`;
 
   async function loadLeaves() {
-    allLeaves = await api('/api/admin/leaves');
-    if (!allLeaves) return;
-    renderLeaves();
+      allLeaves = await api('/api/admin/leaves');
+      if (!allLeaves) return;
+      renderLeaves();
   }
 
   function renderLeaves() {
-    const filter = $('leaveFilter').value;
-    const filtered = filter === 'All' ? allLeaves : allLeaves.filter(l => l.status === filter);
-    
-    $('leaveBody').innerHTML = filtered.length ? filtered.map(l => `<tr>
-      <td>${esc(l.student)}</td><td>${esc(l.type)}</td><td>${l.start}</td><td>${l.end}</td>
-      <td>${esc(l.reason)}</td><td><span class="badge ${l.status}">${l.status}</span></td>
-      <td>${l.status === 'Pending' ? leaveActions(l.id) : ''}</td></tr>`).join('')
-      : '<tr><td colspan="7" class="legend" style="text-align:center;">No leave requests found.</td></tr>';
+      const filter = $('leaveFilter').value;
+      const filtered = filter === 'All' ? allLeaves : allLeaves.filter(l => l.status === filter);
+      
+      $('leaveBody').innerHTML = filtered.length ? filtered.map(l => `<tr>
+        <td>${esc(l.student)}</td>
+        <td>${esc(l.type)}</td>
+        <td style="font-weight: 600; color: #2563eb;">${esc(l.duration || 'Full Day')}</td>
+        <td>${l.start}</td>
+        <td>${l.end}</td>
+        <td>${esc(l.reason)}</td>
+        <td><span class="badge ${l.status}">${l.status}</span></td>
+        <td>${l.status === 'Pending' ? leaveActions(l.id) : ''}</td>
+      </tr>`).join('')
+      : '<tr><td colspan="8" class="legend" style="text-align:center;">No leave requests found.</td></tr>';
   }
-
   $('leaveFilter')?.addEventListener('change', renderLeaves);
 
   document.addEventListener('click', async e => {
@@ -238,7 +249,6 @@
     });
     attendanceLogs.sort((a, b) => b.date.localeCompare(a.date) || a.student.localeCompare(b.student));
     
-     // Helper function to generate a map link with custom colors
     const mapLink = (lat, lng, label, color) => {
         if (!lat || !lng) return ''; 
         return `<a href="https://www.google.com/maps?q=${lat},${lng}" target="_blank" title="${label}" style="color:${color}; text-decoration:none; font-weight:600; font-size: 0.85rem; display: block;"><i class="fa-solid fa-location-dot"></i> ${label}</a>`;
@@ -247,15 +257,11 @@
     $('attLogTable').innerHTML = attendanceLogs.length
       ? attendanceLogs.map(log => {
           let locationHtml = '';
-          
-          // 1. Clock In Location (Blue)
           if (log.in_lat && log.in_lng) {
               locationHtml += mapLink(log.in_lat, log.in_lng, 'Clock In', '#3B82F6');
           } else {
               locationHtml += '<span style="color:#94A3B8; font-size: 0.85rem; display: block;">In: —</span>';
           }
-          
-          // 2. Clock Out Location (Green)
           if (log.times.clockOut && log.out_lat && log.out_lng) {
               locationHtml += mapLink(log.out_lat, log.out_lng, 'Clock Out', '#10B981');
           } else if (log.times.clockOut) {
@@ -417,7 +423,7 @@
     renderHolidays();
   }
   
-    function renderHolidays() {
+  function renderHolidays() {
     const y = holView.getFullYear(), m = holView.getMonth();
     $('holMonth').textContent = `${MONTHS[m]} ${y}`;
     const lead = (new Date(y, m, 1).getDay() + 6) % 7;

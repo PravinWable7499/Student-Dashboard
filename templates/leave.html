@@ -21,6 +21,20 @@
                 <div style="flex:1"><label>Start date</label><input id="leaveStart" type="date" required></div>
                 <div style="flex:1"><label>End date</label><input id="leaveEnd" type="date" required></div>
             </div>
+            <!-- Duration Radio Buttons -->
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #334155; font-size: 14px;">Duration</label>
+                <div style="display: flex; gap: 25px;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; color: #475569;">
+                        <input type="radio" name="leaveDuration" value="Full Day" checked> 
+                        Full Day
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; color: #475569;">
+                        <input type="radio" name="leaveDuration" value="Half Day"> 
+                        Half Day
+                    </label>
+                </div>
+            </div>
             <label style="margin-top:10px;">Reason</label>
             <textarea id="leaveReason" rows="3" placeholder="Briefly explain your request"></textarea>
             <button type="submit" class="btn btn-primary" style="margin-top: 15px;">Submit request</button>
@@ -32,16 +46,17 @@
         <span class="eyebrow">REQUEST HISTORY</span>
         <h3>My leave requests</h3>
         <table class="data-table" style="margin-top: 20px;">
-            <thead><tr><th>Type</th><th>Dates</th><th>Status</th></tr></thead>
+            <thead><tr><th>Type</th><th>Duration</th><th>Dates</th><th>Status</th></tr></thead>
             <tbody>
                 {% for l in leaves %}
                 <tr>
                     <td>{{ l.leave_type }}</td>
-                    <td>{{ l.start_date.strftime('%d %b') }} - {{ l.end_date.strftime('%d %b') }}</td>
-                    <td><span class="badge {{ l.status | lower }}">{{ l.status }}</span></td>
+                    <td style="font-weight: 600; color: #2563eb;">{{ l.duration }}</td>
+                    <td>{{ l.start_date }} to {{ l.end_date }}</td>
+                    <td>{{ l.status }}</td>
                 </tr>
                 {% else %}
-                <tr><td colspan="3" style="text-align: center; color: #64748B;">No leave requests found.</td></tr>
+                <tr><td colspan="4" style="text-align: center; color: #64748B;">No leave requests found.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -70,6 +85,7 @@
                     leave_type: document.getElementById('leaveType').value,
                     start_date: document.getElementById('leaveStart').value,
                     end_date: document.getElementById('leaveEnd').value,
+                    duration: document.querySelector('input[name="leaveDuration"]:checked').value,
                     reason: document.getElementById('leaveReason').value
                 })
             });

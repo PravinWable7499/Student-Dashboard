@@ -401,8 +401,7 @@ def calendar_page():
 @app.route("/leave")
 @student
 def leave_page():
-    leaves = run("SELECT leave_type, start_date, end_date, status FROM LeaveRequest "
-                 "WHERE student_id=%s ORDER BY applied_on DESC", (session["student_id"],), "all")
+    leaves = run("SELECT leave_type, start_date, end_date, duration, status FROM LeaveRequest WHERE student_id=%s ORDER BY applied_on DESC", (session["student_id"],), "all")
     return render_template(
         "leave.html", leaves=leaves, total=len(leaves),
         pending=sum(1 for l in leaves if l.status == "Pending"),
@@ -610,9 +609,9 @@ def api_add_leave():
         return jsonify(success=False, message="End date cannot be before start date."), 400
     if start < now_ist().date():
         return jsonify(success=False, message="Start date cannot be in the past."), 400
-    run("INSERT INTO LeaveRequest (student_id, start_date, end_date, leave_type, reason) "
-        "VALUES (%s, %s, %s, %s, %s)",
-        (session["student_id"], start, end, d["leave_type"], (d.get("reason") or "").strip()))
+    duration = d.get("duration", "Full Day")
+    run("INSERT INTO LeaveRequest (student_id, start_date, end_date, leave_type, duration, reason) " \
+    "VALUES (%s, %s, %s, %s, %s, %s)", (session["student_id"], start, end, d["leave_type"], duration, (d.get("reason") or "").strip()))
     return jsonify(success=True)
 
 # ================================================================ TASKS API
@@ -743,13 +742,24 @@ def admin_students():
 @app.route("/api/admin/leaves")
 @admin
 def admin_leaves():
-    rows = run("SELECT l.leave_id, s.firstname || ' ' || s.lastname AS name, l.leave_type, "
-               "l.start_date, l.end_date, l.reason, l.status FROM LeaveRequest l "
-               "JOIN Student s ON s.student_id=l.student_id ORDER BY l.applied_on DESC",
-               fetch="all")
-    return jsonify([{"id": r.leave_id, "student": r.name, "type": r.leave_type,
-                     "start": r.start_date.isoformat(), "end": r.end_date.isoformat(),
-                     "reason": r.reason or "", "status": r.status} for r in rows])
+    rows = run("""
+        SELECT l.leave_id, s.firstname || ' ' || s.lastname AS name, 
+               l.leave_type, l.duration, l.start_date, l.end_date, l.reason, l.status 
+        FROM LeaveRequest l 
+        JOIN Student s ON s.student_id=l.student_id 
+        ORDER BY l.applied_on DESC
+    """, fetch="all")
+    
+    return jsonify([{
+        "id": r.leave_id, 
+        "student": r.name, 
+        "type": r.leave_type, 
+        "duration": r.duration or "Full Day", # Fallback just in case
+        "start": r.start_date.isoformat(), 
+        "end": r.end_date.isoformat(), 
+        "reason": r.reason or "", 
+        "status": r.status
+    } for r in rows])
 
 @app.route("/api/admin/leaves/<int:leave_id>", methods=["POST"])
 @admin
