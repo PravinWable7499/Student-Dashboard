@@ -11,9 +11,22 @@
 <div class="profile-container">
 
     <!-- Left Side: Basic Profile Card -->
+    <!-- Left Side: Basic Profile Card -->
     <div class="profile-card">
-        <img src="https://ui-avatars.com/api/?name={{ student.firstname }}+{{ student.lastname }}&background=2563EB&color=fff&size=140"
-             alt="Student avatar">
+        <!-- Dynamic Profile Picture with Upload Button -->
+        <div style="position: relative; display: inline-block; margin-bottom: 15px;">
+            <img id="profilePreview" 
+                 src="{% if student.profile_pic %}data:image/jpeg;base64,{{ student.profile_pic }}{% else %}https://ui-avatars.com/api/?name={{ student.firstname }}+{{ student.lastname }}&background=2563EB&color=fff&size=140{% endif %}"
+                 alt="Student avatar"
+                 style="width: 140px; height: 140px; border-radius: 50%; object-fit: cover; border: 4px solid #e2e8f0;">
+            
+            <!-- Camera Upload Button Overlay -->
+            <label for="picUpload" style="position: absolute; bottom: 5px; right: 5px; background: #2563EB; color: white; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.2); transition: background 0.2s;">
+                <i class="fa-solid fa-camera"></i>
+            </label>
+            <input type="file" id="picUpload" accept="image/png, image/jpeg, image/webp" style="display: none;">
+        </div>
+
         <h2>{{ student.firstname }} {{ student.lastname }}</h2>
         <p>@{{ student.username }}</p>
         <div class="status">
@@ -145,6 +158,7 @@
 
 {% block extra_js %}
 <script>
+    
     // Data injected from server to populate the form
     const currentData = {
         firstname: "{{ student.firstname }}",
@@ -208,5 +222,43 @@
             btn.textContent = 'Save Changes';
         }
     });
+</script>
+<script>
+document.getElementById('picUpload').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Show loading state
+    const btn = e.target.nextElementSibling;
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Uploading...';
+    btn.disabled = true;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+        const res = await fetch('/api/upload-profile-pic', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            // Update the image preview instantly without reloading
+            document.getElementById('profilePreview').src = data.image;
+            alert('Profile picture updated successfully!');
+        } else {
+            alert(data.message || 'Upload failed.');
+        }
+    } catch (err) {
+        alert('Network error. Please try again.');
+    } finally {
+        // Reset button
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+        e.target.value = ''; // Reset input
+    }
+});
 </script>
 {% endblock %}

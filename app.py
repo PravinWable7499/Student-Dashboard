@@ -1,3 +1,4 @@
+import base64
 import csv
 import io
 import sib_api_v3_sdk
@@ -482,6 +483,13 @@ def dashboard_student():
     today_leaves_list = [{"name": t.name, "type": t.leave_type} for t in today_leaves]
     # --------------------------------
 
+    # Fetch student profile including profile_pic
+    student_profile = run("""
+        SELECT firstname, lastname, profile_pic 
+        FROM Student 
+        WHERE student_id = %s
+    """, (sid,), "one")
+
     return render_template(
         "dashboard_student.html", username=session["name"], student_id=sid,
         remaining_tasks=remaining, completed_tasks=completed, overdue_tasks=overdue,
@@ -494,7 +502,8 @@ def dashboard_student():
         today_date=today_date,
         is_holiday=is_holiday, holiday_name=holiday_name,
         upcoming_birthdays=upcoming_birthdays,
-        today_leaves=today_leaves_list
+        today_leaves=today_leaves_list,
+        student_profile=student_profile  # <-- ADDED THIS
     )
 
 @app.route("/calendar")
@@ -560,7 +569,7 @@ def attendance_export():
 def student_profile():
     student = run("""
         SELECT s.student_id, s.firstname, s.lastname, s.email, s.mobile_no,
-               s.gender, s.dob, s.city, u.username
+               s.gender, s.dob, s.city, u.username, s.profile_pic
         FROM Student s
         INNER JOIN users u ON s.user_id = u.user_id
         WHERE s.student_id = %s
@@ -699,6 +708,27 @@ def api_update_profile():
         return jsonify(success=True)
     except psycopg2.IntegrityError:
         return jsonify(success=False, message="Database error updating profile."), 400
+
+
+@app.route("/api/upload-profile-pic", methods=["POST"])
+@student  # Note: Create a duplicate of this function with @admin for the admin side
+def upload_profile_pic():
+    if 'file' not in request.files:
+        return jsonify(success=False, message="No file selected."), 400
+    
+    file = request.files['file']
+    if not file.filename or not file.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
+        return jsonify(success=False, message="Invalid image format. Please use PNG or JPG."), 400
+
+    # Read and encode image to Base64
+    img_data = file.read()
+    img_base64 = base64.b64encode(img_data).decode('utf-8')
+    
+    # Save to Database
+    run("UPDATE Student SET profile_pic = %s WHERE student_id = %s", (img_base64, session['student_id']))
+    
+    # Return the image data so the UI can update instantly
+    return jsonify(success=True, image=f"data:image/jpeg;base64,{img_base64}")
 
 @app.route("/api/add_leave", methods=["POST"])
 @student

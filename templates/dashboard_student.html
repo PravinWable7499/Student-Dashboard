@@ -114,14 +114,29 @@
 
 <div class="dash-grid-top">
     <div class="dash-card">
-        <div class="profile-top">
-            <div class="avatar-box">{{ username[:2] | upper }}</div>
-            <div>
-                <h3>{{ username }}</h3>
-                <p>Student</p>
-                <span class="profile-id">ID: STU-{{ student_id }}</span>
+    <div class="profile-top">
+        <!-- Check if profile picture exists -->
+        {% if student_profile and student_profile.profile_pic %}
+            <img src="data:image/jpeg;base64,{{ student_profile.profile_pic }}" 
+                 alt="Profile Picture" 
+                 style="width: 70px; height: 70px; border-radius: 8px; object-fit: cover; flex-shrink: 0; border: 1px solid #E2E8F0;">
+        {% else %}
+            <!-- Fallback to initials if no picture -->
+            <div class="avatar-box">
+                {% if student_profile %}
+                    {{ student_profile.firstname[:1] }}{{ student_profile.lastname[:1] | upper }}
+                {% else %}
+                    {{ username[:2] | upper }}
+                {% endif %}
             </div>
+        {% endif %}
+        
+        <div>
+            <h3>{{ student_profile.firstname if student_profile else username }}</h3>
+            <p>Student</p>
+            <span class="profile-id">ID: STU-{{ student_id }}</span>
         </div>
+    </div>
         <div class="profile-stats">
             <div class="profile-stat"><span>Open Tasks</span><strong>{{ remaining_tasks }}</strong></div>
             <div class="profile-stat"><span>Leave Requests</span><strong>{{ total_leaves }}</strong></div>
@@ -317,3 +332,42 @@
     setInterval(updateLiveClock, 1000); 
 </script>
 {% endblock %}
+
+<script>
+document.getElementById('picUpload').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Show a quick loading state
+    const btn = e.target.nextElementSibling;
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Uploading...';
+    btn.disabled = true;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+        const res = await fetch('/api/upload-profile-pic', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            // Update the image preview instantly
+            document.getElementById('profilePreview').src = data.image;
+            alert('Profile picture updated successfully!');
+        } else {
+            alert(data.message || 'Upload failed.');
+        }
+    } catch (err) {
+        alert('Network error. Please try again.');
+    } finally {
+        // Reset button
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+        e.target.value = ''; // Reset input so the same file can be uploaded again if needed
+    }
+});
+</script>
