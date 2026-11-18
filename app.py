@@ -23,8 +23,20 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from connection import get_db_connection
 
+import requests
+import json
+
 app = Flask(__name__)
 app.secret_key = os.environ.get("SMS_SECRET_KEY", "change-this-secret-key")
+
+@app.after_request
+def add_no_cache_headers(response):
+    # Prevent browsers from caching HTML pages (so profile pics update instantly)
+    if response.mimetype == "text/html":
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
 
 IST = timezone(timedelta(hours=5, minutes=30))
 LEAVE_TYPES = {"Sick Leave", "Casual Leave"}
@@ -36,6 +48,8 @@ SMTP_USER = os.environ.get("SMTP_USER", "").strip()
 SMTP_PASS = os.environ.get("SMTP_PASS", "").replace(" ", "").strip()  # Remove ALL spaces
 
 BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "").strip()
+
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
 
 # ---------------------------------------------------------------- helpers
 def now_ist():
@@ -711,25 +725,39 @@ def api_update_profile():
 
 
 @app.route("/api/upload-profile-pic", methods=["POST"])
-@student  # Note: Create a duplicate of this function with @admin for the admin side
+@student
 def upload_profile_pic():
-    if 'file' not in request.files:
-        return jsonify(success=False, message="No file selected."), 400
-    
-    file = request.files['file']
-    if not file.filename or not file.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
-        return jsonify(success=False, message="Invalid image format. Please use PNG or JPG."), 400
+    try:
+        if 'file' not in request.files:
+            return jsonify(success=False, message="No file selected."), 400
+        
+        file = request.files['file']
+        if not file.filename:
+            return jsonify(success=False, message="Invalid file."), 400
 
-    # Read and encode image to Base64
-    img_data = file.read()
-    img_base64 = base64.b64encode(img_data).decode('utf-8')
-    
-    # Save to Database
-    run("UPDATE Student SET profile_pic = %s WHERE student_id = %s", (img_base64, session['student_id']))
-    
-    # Return the image data so the UI can update instantly
-    return jsonify(success=True, image=f"data:image/jpeg;base64,{img_base64}")
+        # Detect mime type, fallback to jpeg if unknown
+        mime = file.mimetype
+        if mime not in ('image/png', 'image/jpeg', 'image/webp'):
+            mime = 'image/jpeg'
 
+        img_data = file.read()
+        
+        # Prevent server crash from huge files (Max 2MB)
+        if len(img_data) > 2 * 1024 * 1024:
+            return jsonify(success=False, message="File is too large. Please use an image under 2MB."), 400
+
+        img_base64 = base64.b64encode(img_data).decode('utf-8')
+        data_uri = f"data:{mime};base64,{img_base64}"
+        
+        # Save to Database
+        run("UPDATE Student SET profile_pic = %s WHERE student_id = %s", (data_uri, session['student_id']))
+        
+        return jsonify(success=True, image=data_uri)
+        
+    except Exception as e:
+        app.logger.error(f"Profile pic upload error: {e}")
+        return jsonify(success=False, message=f"Server error: {str(e)}"), 500
+    
 @app.route("/api/add_leave", methods=["POST"])
 @student
 def api_add_leave():
@@ -1490,5 +1518,151 @@ def admin_student_delete(sid):
         return jsonify(success=False, message="Student not found."), 404
     return jsonify(success=True)
 
+# ================================================================ AI CHATBOT
+def build_student_context(sid):
+    today = now_ist().date()
+    p = compute_performance(sid)
+    att = today_attendance(sid)
+
+    prof = run("SELECT firstname, lastname, email, mobile_no, gender, dob, city "
+               "FROM Student WHERE student_id=%s", (sid,), "one")
+
+    lv = run("SELECT COUNT(*) total, "
+             "SUM(CASE WHEN status='Pending' THEN 1 ELSE 0 END) pending, "
+             "SUM(CASE WHEN status='Approved' THEN 1 ELSE 0 END) approved "
+             "FROM LeaveRequest WHERE student_id=%s", (sid,), "one")
+
+    upcoming_leaves = run("SELECT leave_type, start_date, end_date FROM LeaveRequest "
+                          "WHERE student_id=%s AND status='Approved' AND end_date>=%s "
+                          "ORDER BY start_date LIMIT 3", (sid, today), "all")
+
+    tasks = run("SELECT title, due_date, status FROM Task WHERE student_id=%s "
+                "ORDER BY due_date LIMIT 10", (sid,), "all")
+
+    hol = run("SELECT name, holiday_date FROM Holiday WHERE holiday_date>=%s "
+              "ORDER BY holiday_date LIMIT 3", (today,), "all")
+
+    day_name = today.strftime("%A")
+    tt = run("SELECT time_slots FROM TimeTable WHERE student_id=%s AND day_of_week=%s "
+             "ORDER BY time_slots", (sid, day_name), "all")
+
+    month_start = today.replace(day=1)
+    present_days = run("SELECT COUNT(DISTINCT CAST(clock_in_time AS DATE)) n "
+                       "FROM Attendance WHERE student_id=%s AND CAST(clock_in_time AS DATE)>=%s",
+                       (sid, month_start), "one").n
+
+    ctx = {
+        "current_date": today.strftime("%d %b %Y (%A)"),
+        "personal": {
+            "name": f"{prof.firstname} {prof.lastname}" if prof else session.get("name"),
+            "student_id": f"STU-{sid}",
+            "email": prof.email if prof else session.get("username"),
+            "username": session.get("username"),
+            "mobile": prof.mobile_no if prof else None,
+            "city": prof.city if prof else None,
+            "gender": prof.gender if prof else None,
+            "dob": prof.dob.strftime("%d %b %Y") if prof and prof.dob else None,
+        },
+        "attendance_today": {
+            "status": att.clock_out_time and "Completed" or (att.clock_in_time and "In Progress" or "Not Started") if att else "Not Started",
+            "clock_in": fmt_time(att.clock_in_time) if att else None,
+            "clock_out": fmt_time(att.clock_out_time) if att and att.clock_out_time else None,
+        },
+        "attendance_this_month": {"days_present": present_days},
+        "performance_last_30_days": {
+            "overall_pct": p["overall"], "grade": p["grade"],
+            "attendance_pct": p["attendance_pct"], "attended": p["attended"],
+            "expected": p["expected"], "absent_without_leave": p["absent"],
+        },
+        "leaves": {"total": lv.total or 0, "pending": lv.pending or 0, "approved": lv.approved or 0,
+                   "upcoming_approved": [{"type": l.leave_type, "from": str(l.start_date), "to": str(l.end_date)} for l in upcoming_leaves]},
+        "tasks": [{"title": t.title, "due": str(t.due_date), "status": t.status} for t in tasks],
+        "upcoming_holidays": [{"name": h.name, "date": h.holiday_date.strftime("%d %b %Y")} for h in hol],
+        "today_timetable": [r.time_slots for r in tt],
+        "portal_help": {
+            "apply_leave": "Go to the 'Leave' page in the sidebar, choose Leave Type (Sick/Casual), set Start & End dates, pick Duration (Full Day/Half Day), write a Reason, click Submit. Admin will approve/reject and email you.",
+            "clock_in_out": "On the Dashboard, click 'Clock In' (top-right). Location is captured automatically. Click 'Clock Out' at the end of your day. Clock-in is blocked on Sundays & holidays and before your scheduled start time.",
+            "change_password": "Go to 'Security' in the sidebar, enter current + new password (min 8 chars), click Update.",
+            "profile_pic": "Go to 'My Profile', click the camera icon on your avatar, pick an image (auto-compressed), it saves instantly.",
+            "tasks": "Admin assigns tasks; you'll see them under 'Tasks'. Log hours on a task and it goes to 'Needs Approval'.",
+            "security_note": "Never share your password. Initial password is Firstname + BirthYear. Change it immediately in Security."
+        }
+    }
+    return ctx
+
+SYSTEM_PROMPT_TEMPLATE = """You are the "Campus Portal AI Assistant", a friendly, concise helper for a student.
+You have access to THIS student's live data (JSON below). Answer questions using ONLY this data.
+Be warm, short (max ~120 words), and use bullet points when listing. Reply in the same language the student uses (English, Hindi, or Marathi/Hinglish are all fine).
+
+Rules:
+- For "how do I..." questions, use the portal_help guide.
+- NEVER reveal password hashes or ask for passwords. If asked about passwords, explain the Security page flow.
+- If a question is outside this student's data or the portal's scope, politely say you can only help with portal matters.
+- Use today's date when talking about "upcoming", "this week", etc.
+
+Student data:
+{context}
+"""
+
+@app.route("/api/chatbot", methods=["POST"])
+@student
+def api_chatbot():
+    if not GROQ_API_KEY:
+        return jsonify(success=False, message="AI assistant is not configured yet. Ask the admin to set GROQ_API_KEY.")
+
+    # Simple rate limit: 1 request / 1.2s per user
+    last = session.get("_chat_ts", 0)
+    if (datetime.now().timestamp() - last) < 1.2:
+        return jsonify(success=False, message="Please wait a moment before sending another message.")
+    session["_chat_ts"] = datetime.now().timestamp()
+
+    payload = request.get_json(silent=True) or {}
+    history = payload.get("messages", [])[-8:]  # keep last 8 turns
+
+    try:
+        ctx = build_student_context(session["student_id"])
+        system_msg = SYSTEM_PROMPT_TEMPLATE.format(context=json.dumps(ctx, indent=2, default=str))
+    except Exception as e:
+        app.logger.error(f"Context build failed: {e}")
+        return jsonify(success=False, message="Could not load your data right now. Please try again."), 500
+
+    messages = [{"role": "system", "content": system_msg}] + [
+        {"role": m["role"], "content": m["content"]} for m in history if m.get("role") in ("user", "assistant")
+    ]
+
+    try:
+        # resp = requests.post(
+        #     "https://api.groq.com/openai/v1/chat/completions",
+        #     headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
+        #     json={"model": "llama-3.1-8b-instant", "messages": messages,
+        #           "temperature": 0.5, "max_tokens": 400},
+        #     timeout=20
+        # )
+        model_name = "llama-3.3-70b-versatile"
+        app.logger.info(f"🤖 Sending model: '{model_name}' (length: {len(model_name)}, repr: {repr(model_name)})")
+        resp = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
+            json={"model": "qwen/qwen3.8-27b", "messages": messages, "temperature": 0.5, "max_tokens": 400},            timeout=20
+        )
+
+        
+        if resp.status_code != 200:
+            app.logger.error(f"Groq error {resp.status_code}: {resp.text[:300]}")
+            return jsonify(success=False, message="AI service is busy. Please try again in a few seconds."), 502
+        reply = resp.json()["choices"][0]["message"]["content"].strip()
+        return jsonify(success=True, reply=reply)
+    except requests.Timeout:
+        return jsonify(success=False, message="The AI took too long to respond. Please try again."), 504
+    except Exception as e:
+        app.logger.error(f"Chatbot error: {e}")
+        return jsonify(success=False, message="Something went wrong. Please try again."), 500   
+
 if __name__ == "__main__":
     app.run(debug=True)
+
+
+
+
+
+

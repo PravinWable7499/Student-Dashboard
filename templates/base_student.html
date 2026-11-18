@@ -9,6 +9,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard_student.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/chatbot.css') }}">
     {% block extra_css %}{% endblock %}
 </head>
 <body>
@@ -66,13 +67,13 @@
         </div>
     </main>
 
+    <!-- GLOBAL SCRIPTS -->
     <script>
         // --- GLOBAL CLOCK OUT LOGIC ---
         async function globalPostAttendance(url) {
             try {
                 const res = await fetch(url, { method: 'POST' });
                 const data = await res.json();
-
                 if (!data.success) {
                     alert(data.message || 'Something went wrong.');
                     return;
@@ -87,6 +88,7 @@
         function globalClockIn() { return globalPostAttendance('/api/clock_in'); }
         function globalClockOut() { return globalPostAttendance('/api/clock_out'); }
     </script>
+    
     <script>
         (() => {
             const sidebar = document.querySelector('.sidebar');
@@ -129,5 +131,34 @@
     </script>
     
     {% block extra_js %}{% endblock %}
+
+    <!-- ========================================== -->
+    <!-- AI CAMPUS ASSISTANT (Must be right before </body>) -->
+    <!-- ========================================== -->
+    <button id="aiFab" aria-label="Open AI Assistant" title="Ask AI Assistant">
+        <i class="fa-solid fa-robot"></i>
+    </button>
+    
+    <div id="aiPanel">
+        <div class="ai-head">
+            <span class="dot"></span>
+            <h4>Campus Assistant</h4>
+            <button class="close" onclick="document.getElementById('aiPanel').classList.remove('open')" aria-label="Close">&times;</button>
+        </div>
+        <div class="ai-body" id="aiBody"></div>
+        <div class="ai-chips">
+            <span class="ai-chip">What's my attendance?</span>
+            <span class="ai-chip">When is the next holiday?</span>
+            <span class="ai-chip">How do I apply for leave?</span>
+            <span class="ai-chip">My pending tasks</span>
+            <span class="ai-chip">Today's timetable</span>
+        </div>
+        <div class="ai-foot">
+            <input id="aiInput" type="text" placeholder="Ask anything about your portal..." autocomplete="off">
+            <button id="aiSend" aria-label="Send message"><i class="fa-solid fa-paper-plane"></i></button>
+        </div>
+    </div>
+    
+    <script src="{{ url_for('static', filename='js/chatbot.js') }}"></script>
 </body>
 </html>

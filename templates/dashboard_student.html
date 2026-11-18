@@ -114,28 +114,32 @@
 
 <div class="dash-grid-top">
     <div class="dash-card">
-    <div class="profile-top">
-        <!-- Check if profile picture exists -->
-        {% if student_profile and student_profile.profile_pic %}
-            <img src="data:image/jpeg;base64,{{ student_profile.profile_pic }}" 
-                 alt="Profile Picture" 
-                 style="width: 70px; height: 70px; border-radius: 8px; object-fit: cover; flex-shrink: 0; border: 1px solid #E2E8F0;">
-        {% else %}
-            <!-- Fallback to initials if no picture -->
-            <div class="avatar-box">
-                {% if student_profile %}
-                    {{ student_profile.firstname[:1] }}{{ student_profile.lastname[:1] | upper }}
-                {% else %}
-                    {{ username[:2] | upper }}
-                {% endif %}
-            </div>
-        {% endif %}
-        
-        <div>
-            <h3>{{ student_profile.firstname if student_profile else username }}</h3>
-            <p>Student</p>
-            <span class="profile-id">ID: STU-{{ student_id }}</span>
+<div class="profile-top">
+    <!-- Show profile picture if exists, otherwise show initials -->
+    {% if student_profile and student_profile.profile_pic %}
+    <img src="{{ student_profile.profile_pic }}"
+        alt="{{ student_profile.firstname }} {{ student_profile.lastname }}"
+        onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
+        style="width: 70px; height: 70px; border-radius: 8px; object-fit: cover; flex-shrink: 0; border: 1px solid #E2E8F0; image-rendering: auto;">
+        <!-- Hidden fallback avatar (shown only if image fails to load) -->
+        <div class="avatar-box" style="display: none;">
+            {{ (student_profile.firstname[:1] if student_profile else 'S') }}{{ (student_profile.lastname[:1] if student_profile else 'T') | upper }}
         </div>
+    {% else %}
+        <div class="avatar-box">
+            {% if student_profile %}
+                {{ student_profile.firstname[:1] }}{{ student_profile.lastname[:1] | upper }}
+            {% else %}
+                {{ username[:2] | upper }}
+            {% endif %}
+        </div>
+    {% endif %}
+
+    <div>
+        <h3>{{ student_profile.firstname if student_profile else username }}</h3>
+        <p>Student</p>
+        <span class="profile-id">ID: STU-{{ student_id }}</span>
+    </div>
     </div>
         <div class="profile-stats">
             <div class="profile-stat"><span>Open Tasks</span><strong>{{ remaining_tasks }}</strong></div>

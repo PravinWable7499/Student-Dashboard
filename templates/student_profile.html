@@ -16,8 +16,7 @@
         <!-- Dynamic Profile Picture with Upload Button -->
         <div style="position: relative; display: inline-block; margin-bottom: 15px;">
             <img id="profilePreview" 
-                 src="{% if student.profile_pic %}data:image/jpeg;base64,{{ student.profile_pic }}{% else %}https://ui-avatars.com/api/?name={{ student.firstname }}+{{ student.lastname }}&background=2563EB&color=fff&size=140{% endif %}"
-                 alt="Student avatar"
+                 src="{{ student.profile_pic if student.profile_pic else 'https://ui-avatars.com/api/?name=' + student.firstname + '+' + student.lastname + '&background=2563EB&color=fff&size=140' }}"
                  style="width: 140px; height: 140px; border-radius: 50%; object-fit: cover; border: 4px solid #e2e8f0;">
             
             <!-- Camera Upload Button Overlay -->
@@ -224,40 +223,71 @@
     });
 </script>
 <script>
+// Auto-resize helper: shrinks any image to max 512px and compresses to JPEG
+function resizeImage(file, maxSize = 1024, quality = 0.92) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = e => {
+            const img = new Image();
+            img.onload = () => {
+                let { width, height } = img;
+                if (width > height) {
+                    if (width > maxSize) { height = Math.round(height * maxSize / width); width = maxSize; }
+                } else {
+                    if (height > maxSize) { width = Math.round(width * maxSize / height); height = maxSize; }
+                }
+                const canvas = document.createElement('canvas');
+                canvas.width = width; canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(img, 0, 0, width, height);
+                canvas.toBlob(blob => {
+                    if (!blob) return reject(new Error('Resize failed'));
+                    resolve(blob);
+                }, 'image/jpeg', quality);
+            };
+            img.onerror = () => reject(new Error('Could not read image'));
+            img.src = e.target.result;
+        };
+        reader.onerror = () => reject(new Error('File read failed'));
+        reader.readAsDataURL(file);
+    });
+}
+
 document.getElementById('picUpload').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    // Show loading state
-    const btn = e.target.nextElementSibling;
-    const originalText = btn.innerHTML;
-    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Uploading...';
-    btn.disabled = true;
-
-    const formData = new FormData();
-    formData.append('file', file);
+    const btn = document.querySelector('label[for="picUpload"]');
+    const originalHTML = btn ? btn.innerHTML : '';
+    if (btn) { btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>'; btn.style.pointerEvents = 'none'; }
 
     try {
-        const res = await fetch('/api/upload-profile-pic', {
-            method: 'POST',
-            body: formData
-        });
+        console.log(`📁 Original: ${(file.size / 1024).toFixed(1)} KB`);
+
+        // Resize before upload
+        const resizedBlob = await resizeImage(file);
+        console.log(`✅ Resized: ${(resizedBlob.size / 1024).toFixed(1)} KB`);
+
+        const formData = new FormData();
+        formData.append('file', resizedBlob, 'profile.jpg');
+
+        const res = await fetch('/api/upload-profile-pic', { method: 'POST', body: formData });
         const data = await res.json();
 
         if (data.success) {
-            // Update the image preview instantly without reloading
             document.getElementById('profilePreview').src = data.image;
-            alert('Profile picture updated successfully!');
+            alert('✅ Profile picture updated!');
         } else {
-            alert(data.message || 'Upload failed.');
+            alert('❌ ' + (data.message || 'Upload failed'));
         }
     } catch (err) {
-        alert('Network error. Please try again.');
+        console.error(err);
+        alert('❌ Error: ' + err.message);
     } finally {
-        // Reset button
-        btn.innerHTML = originalText;
-        btn.disabled = false;
-        e.target.value = ''; // Reset input
+        if (btn) { btn.innerHTML = originalHTML; btn.style.pointerEvents = 'auto'; }
+        e.target.value = '';
     }
 });
 </script>

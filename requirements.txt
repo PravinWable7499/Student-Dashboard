@@ -5,3 +5,4 @@ gunicorn
 werkzeug
 python-dotenv
 sib-api-v3-sdk
+requests
