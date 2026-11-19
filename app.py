@@ -106,6 +106,18 @@ def fmt_duration(start, end):
     secs = max(int((end - start).total_seconds()), 0)
     return f"{secs // 3600:02d}:{secs % 3600 // 60:02d}:{secs % 60:02d}"
 
+def notify_students(title, message, student_id=None):
+    """Send a notification. If student_id is provided, it goes to that specific student. 
+       If None, it broadcasts to ALL students."""
+    if student_id:
+        run("INSERT INTO Notifications (student_id, title, message) VALUES (%s, %s, %s)", 
+            (student_id, title, message))
+    else:
+        run("""
+            INSERT INTO Notifications (student_id, title, message)
+            SELECT student_id, %s, %s FROM Student
+        """, (title, message))
+
 def login_required(role):
     def deco(fn):
         @wraps(fn)
@@ -993,23 +1005,32 @@ def admin_leave_action(leave_id):
     if status not in ["Approved", "Rejected"]:
         return jsonify(success=False, message="Invalid status."), 400
 
-    # 1. Update the database
-    run("UPDATE LeaveRequest SET status=%s WHERE leave_id=%s", (status, leave_id))
-
-    # 2. Fetch student and leave details to send the email
+    # 1. Fetch leave & student details FIRST
     row = run("""
-        SELECT s.firstname, s.email, l.leave_type, l.start_date, l.end_date 
+        SELECT l.student_id, s.firstname, s.email, l.leave_type, l.start_date, l.end_date 
         FROM LeaveRequest l 
         JOIN Student s ON s.student_id = l.student_id 
         WHERE l.leave_id = %s
     """, (leave_id,), "one")
 
-    # 3. Send the email in the background (so the admin UI doesn't freeze)
-    if row:
-        threading.Thread(
-            target=send_leave_status_email, 
-            args=(row.email, row.firstname, row.leave_type, status, row.start_date, row.end_date)
-        ).start()
+    if not row:
+        return jsonify(success=False, message="Leave request not found."), 404
+
+    # 2. Update the database
+    run("UPDATE LeaveRequest SET status=%s WHERE leave_id=%s", (status, leave_id))
+
+    # 3. 🚨 SEND NOTIFICATION TO THE SPECIFIC STUDENT
+    notify_students(
+        f"Leave {status}", 
+        f"Your {row.leave_type} leave request from {row.start_date} to {row.end_date} has been {status.lower()}.", 
+        row.student_id
+    )
+
+    # 4. Send the email in the background
+    threading.Thread(
+        target=send_leave_status_email, 
+        args=(row.email, row.firstname, row.leave_type, status, row.start_date, row.end_date)
+    ).start()
 
     return jsonify(success=True)
 
@@ -1161,6 +1182,9 @@ def admin_tasks():
         # 1. Save the task to the database
         run("INSERT INTO Task (student_id, title, description, due_date) VALUES (%s, %s, %s, %s)",
             (sid, title, (d.get("description") or "").strip() or None, due))
+                # ... existing task save code ...
+                # 🚨 SEND NOTIFICATION
+        notify_students("New Task Assigned", f"You have been assigned a new task: '{title}'. Due date: {due}.", sid)
 
         # 2. Fetch student details and send email in the background
         student = run("SELECT firstname, email FROM Student WHERE student_id = %s", (sid,), "one")
@@ -1182,13 +1206,22 @@ def admin_tasks():
 @app.route("/api/admin/tasks/<int:tid>/approve", methods=["POST"])
 @admin
 def admin_approve_task(tid):
-    run("UPDATE Task SET status='completed', updated_at=%s WHERE task_id=%s", (now_ist(), tid))
+    # Fetch task details first to get student_id and title
+    task = run("SELECT student_id, title FROM Task WHERE task_id=%s", (tid,), "one")
+    if task:
+        run("UPDATE Task SET status='completed', updated_at=%s WHERE task_id=%s", (now_ist(), tid))
+        # 🚨 SEND NOTIFICATION
+        notify_students("Task Approved", f"Your task '{task.title}' has been approved by the admin.", task.student_id)
     return jsonify(success=True)
 
 @app.route("/api/admin/tasks/<int:tid>/reject", methods=["POST"])
 @admin
 def admin_reject_task(tid):
-    run("UPDATE Task SET status='in_progress', updated_at=%s WHERE task_id=%s", (now_ist(), tid))
+    task = run("SELECT student_id, title FROM Task WHERE task_id=%s", (tid,), "one")
+    if task:
+        run("UPDATE Task SET status='in_progress', updated_at=%s WHERE task_id=%s", (now_ist(), tid))
+        # 🚨 SEND NOTIFICATION
+        notify_students("Task Needs Revision", f"Your task '{task.title}' was sent back. Please review and resubmit.", task.student_id)
     return jsonify(success=True)
 
 @app.route("/api/admin/tasks/<int:task_id>/delete", methods=["POST"])
@@ -1518,29 +1551,34 @@ def admin_student_delete(sid):
         return jsonify(success=False, message="Student not found."), 404
     return jsonify(success=True)
 
-# ================================================================ AI CHATBOT
 def build_student_context(sid):
+    """Build context for AI chatbot - MUST use sid parameter everywhere, never session directly"""
     today = now_ist().date()
+    yesterday = today - timedelta(days=1)
+    
+    app.logger.info(f"🤖 Building context for student_id={sid}, today={today}, yesterday={yesterday}")
+    
     p = compute_performance(sid)
-    att = today_attendance(sid)
 
     prof = run("SELECT firstname, lastname, email, mobile_no, gender, dob, city "
                "FROM Student WHERE student_id=%s", (sid,), "one")
+
+    if not prof:
+        app.logger.error(f"❌ Student {sid} not found in database!")
+        return {"error": "Student not found"}
 
     lv = run("SELECT COUNT(*) total, "
              "SUM(CASE WHEN status='Pending' THEN 1 ELSE 0 END) pending, "
              "SUM(CASE WHEN status='Approved' THEN 1 ELSE 0 END) approved "
              "FROM LeaveRequest WHERE student_id=%s", (sid,), "one")
 
-    upcoming_leaves = run("SELECT leave_type, start_date, end_date FROM LeaveRequest "
-                          "WHERE student_id=%s AND status='Approved' AND end_date>=%s "
-                          "ORDER BY start_date LIMIT 3", (sid, today), "all")
-
     tasks = run("SELECT title, due_date, status FROM Task WHERE student_id=%s "
                 "ORDER BY due_date LIMIT 10", (sid,), "all")
 
-    hol = run("SELECT name, holiday_date FROM Holiday WHERE holiday_date>=%s "
-              "ORDER BY holiday_date LIMIT 3", (today,), "all")
+    past_hol = run("SELECT name, holiday_date FROM Holiday WHERE holiday_date < %s "
+                   "ORDER BY holiday_date DESC LIMIT 2", (today,), "all")
+    future_hol = run("SELECT name, holiday_date FROM Holiday WHERE holiday_date >= %s "
+                     "ORDER BY holiday_date ASC LIMIT 3", (today,), "all")
 
     day_name = today.strftime("%A")
     tt = run("SELECT time_slots FROM TimeTable WHERE student_id=%s AND day_of_week=%s "
@@ -1551,56 +1589,96 @@ def build_student_context(sid):
                        "FROM Attendance WHERE student_id=%s AND CAST(clock_in_time AS DATE)>=%s",
                        (sid, month_start), "one").n
 
+    # TODAY'S attendance - MUST filter by sid
+    today_att = run("""
+        SELECT clock_in_time, clock_out_time, clock_in_lat, clock_in_lng, clock_out_lat, clock_out_lng 
+        FROM Attendance 
+        WHERE student_id=%s AND CAST(clock_in_time AS DATE)=%s 
+        ORDER BY clock_in_time DESC LIMIT 1
+    """, (sid, today), "one")
+    
+    app.logger.info(f"📅 Today's attendance for student {sid}: {today_att}")
+
+    # YESTERDAY'S attendance - MUST filter by sid
+    yesterday_att = run("""
+        SELECT clock_in_time, clock_out_time 
+        FROM Attendance 
+        WHERE student_id=%s AND CAST(clock_in_time AS DATE)=%s 
+        ORDER BY clock_in_time DESC LIMIT 1
+    """, (sid, yesterday), "one")
+    
+    app.logger.info(f"📅 Yesterday's attendance for student {sid}: {yesterday_att}")
+
     ctx = {
         "current_date": today.strftime("%d %b %Y (%A)"),
+        "current_student_id": sid,  # Explicitly include for debugging
         "personal": {
-            "name": f"{prof.firstname} {prof.lastname}" if prof else session.get("name"),
+            "name": f"{prof.firstname} {prof.lastname}",
             "student_id": f"STU-{sid}",
-            "email": prof.email if prof else session.get("username"),
-            "username": session.get("username"),
-            "mobile": prof.mobile_no if prof else None,
-            "city": prof.city if prof else None,
-            "gender": prof.gender if prof else None,
-            "dob": prof.dob.strftime("%d %b %Y") if prof and prof.dob else None,
+            "email": prof.email,
         },
         "attendance_today": {
-            "status": att.clock_out_time and "Completed" or (att.clock_in_time and "In Progress" or "Not Started") if att else "Not Started",
-            "clock_in": fmt_time(att.clock_in_time) if att else None,
-            "clock_out": fmt_time(att.clock_out_time) if att and att.clock_out_time else None,
+            "status": "Not Started",
+            "clock_in": None,
+            "clock_out": None,
+            "location_in": "Not captured",
+            "location_out": "Not captured",
         },
-        "attendance_this_month": {"days_present": present_days},
+        "attendance_yesterday": {
+            "clock_in": "No record - you did not clock in yesterday",
+            "clock_out": "N/A",
+        },
+        "attendance_this_month": {"days_present": present_days or 0},
         "performance_last_30_days": {
             "overall_pct": p["overall"], "grade": p["grade"],
-            "attendance_pct": p["attendance_pct"], "attended": p["attended"],
-            "expected": p["expected"], "absent_without_leave": p["absent"],
+            "attendance_pct": p["attendance_pct"],
         },
-        "leaves": {"total": lv.total or 0, "pending": lv.pending or 0, "approved": lv.approved or 0,
-                   "upcoming_approved": [{"type": l.leave_type, "from": str(l.start_date), "to": str(l.end_date)} for l in upcoming_leaves]},
+        "leaves": {"total": lv.total or 0, "pending": lv.pending or 0, "approved": lv.approved or 0},
         "tasks": [{"title": t.title, "due": str(t.due_date), "status": t.status} for t in tasks],
-        "upcoming_holidays": [{"name": h.name, "date": h.holiday_date.strftime("%d %b %Y")} for h in hol],
-        "today_timetable": [r.time_slots for r in tt],
+        "past_holidays": [{"name": h.name, "date": h.holiday_date.strftime("%d %b %Y")} for h in past_hol],
+        "upcoming_holidays": [{"name": h.name, "date": h.holiday_date.strftime("%d %b %Y")} for h in future_hol],
+        "today_timetable": [r.time_slots for r in tt] if tt else ["No classes scheduled today"],
         "portal_help": {
-            "apply_leave": "Go to the 'Leave' page in the sidebar, choose Leave Type (Sick/Casual), set Start & End dates, pick Duration (Full Day/Half Day), write a Reason, click Submit. Admin will approve/reject and email you.",
-            "clock_in_out": "On the Dashboard, click 'Clock In' (top-right). Location is captured automatically. Click 'Clock Out' at the end of your day. Clock-in is blocked on Sundays & holidays and before your scheduled start time.",
-            "change_password": "Go to 'Security' in the sidebar, enter current + new password (min 8 chars), click Update.",
-            "profile_pic": "Go to 'My Profile', click the camera icon on your avatar, pick an image (auto-compressed), it saves instantly.",
-            "tasks": "Admin assigns tasks; you'll see them under 'Tasks'. Log hours on a task and it goes to 'Needs Approval'.",
-            "security_note": "Never share your password. Initial password is Firstname + BirthYear. Change it immediately in Security."
+            "apply_leave": "Go to the 'Leave' page in the sidebar, choose Leave Type, set dates, write a Reason, and click Submit.",
+            "clock_location": "You can view your exact GPS coordinates for clock-in and clock-out on the 'Attendance' page.",
+            "change_password": "Go to 'Security' in the sidebar, enter current + new password, click Update.",
+            "profile_pic": "Go to 'My Profile', click the camera icon on your avatar, pick an image, it saves instantly.",
+            "tasks": "Admin assigns tasks; you'll see them under 'Tasks'. Log hours on a task and it goes to 'Needs Approval'."
         }
     }
+    
+    # Safely populate today's attendance
+    if today_att:
+        ctx["attendance_today"] = {
+            "status": "Completed" if today_att.clock_out_time else ("In Progress" if today_att.clock_in_time else "Not Started"),
+            "clock_in": fmt_time(today_att.clock_in_time) if today_att.clock_in_time else None,
+            "clock_out": fmt_time(today_att.clock_out_time) if today_att.clock_out_time else None,
+            "location_in": f"Lat: {today_att.clock_in_lat}, Lng: {today_att.clock_in_lng}" if today_att.clock_in_lat else "Not captured",
+            "location_out": f"Lat: {today_att.clock_out_lat}, Lng: {today_att.clock_out_lng}" if today_att.clock_out_lat else "Not captured",
+        }
+    
+    # Safely populate yesterday's attendance
+    if yesterday_att:
+        ctx["attendance_yesterday"] = {
+            "clock_in": fmt_time(yesterday_att.clock_in_time) if yesterday_att.clock_in_time else "No record",
+            "clock_out": fmt_time(yesterday_att.clock_out_time) if yesterday_att.clock_out_time else "Did not clock out",
+        }
+    
     return ctx
 
 SYSTEM_PROMPT_TEMPLATE = """You are the "Campus Portal AI Assistant", a friendly, concise helper for a student.
 You have access to THIS student's live data (JSON below). Answer questions using ONLY this data.
-Be warm, short (max ~120 words), and use bullet points when listing. Reply in the same language the student uses (English, Hindi, or Marathi/Hinglish are all fine).
+Be warm, short (max ~120 words), and use bullet points when listing. Reply in the same language the student uses.
 
-Rules:
+CRITICAL RULES:
+- If the data shows "No record" or "Not Started", say EXACTLY that. NEVER invent times or say "yes" when data is missing.
+- For attendance questions, check the exact student_id in the data matches. If unsure, say "I don't see a record for that."
 - For "how do I..." questions, use the portal_help guide.
-- NEVER reveal password hashes or ask for passwords. If asked about passwords, explain the Security page flow.
+- NEVER reveal password hashes or ask for passwords.
 - If a question is outside this student's data or the portal's scope, politely say you can only help with portal matters.
 - Use today's date when talking about "upcoming", "this week", etc.
 
-Student data:
+Student data (THIS IS THE LOGGED-IN STUDENT'S DATA ONLY):
 {context}
 """
 
@@ -1658,11 +1736,58 @@ def api_chatbot():
         app.logger.error(f"Chatbot error: {e}")
         return jsonify(success=False, message="Something went wrong. Please try again."), 500   
 
+
+# ================================================================ NOTIFICATIONS
+@app.route("/api/notifications", methods=["GET"])
+@student
+def get_notifications():
+    sid = session["student_id"]
+    unread = run("SELECT COUNT(*) FROM Notifications WHERE student_id=%s AND is_read=FALSE", (sid,), "one")[0]
+    rows = run("SELECT id, title, message, created_at, is_read FROM Notifications WHERE student_id=%s ORDER BY created_at DESC LIMIT 10", (sid,), "all")
+    
+    notifs = []
+    for r in rows:
+        time_ago = "Just now"
+        diff = datetime.now() - r.created_at
+        if diff.seconds > 3600: time_ago = f"{diff.seconds // 3600}h ago"
+        elif diff.seconds > 60: time_ago = f"{diff.seconds // 60}m ago"
+        
+        notifs.append({
+            "id": r.id, "title": r.title, "message": r.message, 
+            "time": time_ago, "is_read": r.is_read
+        })
+    return jsonify(unread=unread, notifications=notifs)
+
+@app.route("/api/notifications/read", methods=["POST"])
+@student
+def mark_notifications_read():
+    run("UPDATE Notifications SET is_read=TRUE WHERE student_id=%s AND is_read=FALSE", (session["student_id"],))
+    return jsonify(success=True)
+
+@app.route("/api/admin/notices", methods=["POST"])
+@admin
+def admin_post_notice():
+    d = request.get_json(silent=True) or {}
+    title = (d.get("title") or "").strip()
+    message = (d.get("message") or "").strip()
+    if not title or not message:
+        return jsonify(success=False, message="Title and message are required."), 400
+    
+    # Send to ALL students
+    notify_students(title, message)
+    return jsonify(success=True, message="Notice published to all students!")
+
+@app.route("/debug/context")
+@student
+def debug_context():
+    """Shows exactly what data the AI chatbot receives for the logged-in student"""
+    sid = session.get("student_id")
+    ctx = build_student_context(sid)
+    return jsonify(
+        session_student_id=sid,
+        session_name=session.get("name"),
+        context=ctx
+    )
+
 if __name__ == "__main__":
     app.run(debug=True)
-
-
-
-
-
-

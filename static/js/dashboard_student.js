@@ -85,4 +85,7 @@ function handleAttendanceToggle() {
     } else {
         handleClockIn();
     }
+    
 }
+
+

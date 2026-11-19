@@ -1,0 +1,305 @@
+/* ============================================================
+   DARK MODE - COMPLETE & CLEAN (All Pages)
+   ============================================================ */
+
+/* 1. Core backgrounds */
+[data-theme="dark"] body {
+  background-color: #0f172a !important;
+  color: #e2e8f0 !important;
+}
+
+/* 2. Turn ALL backgrounds dark (EXCEPT buttons, badges, colored elements, Clock In/Out) */
+[data-theme="dark"]
+  *:not(button):not(.btn):not(.badge):not(.pill):not(.chip):not(.tag):not(
+    .status
+  ):not(.notif-badge):not(.ai-chip):not(#aiFab):not(.btn-clock-in):not(
+    .btn-clock-out
+  ):not([style*="background: #"]):not([style*="background-color: #"]) {
+  background-color: #0f172a !important;
+}
+
+/* 3. Cards and containers get a slightly lighter dark */
+[data-theme="dark"] .card,
+[data-theme="dark"] .dash-card,
+[data-theme="dark"] .modal-box,
+[data-theme="dark"] .profile-card,
+[data-theme="dark"] .details-card,
+[data-theme="dark"] .calendar-container,
+[data-theme="dark"] .calendar-wrapper,
+[data-theme="dark"] div[class*="card"],
+[data-theme="dark"] div[class*="container"],
+[data-theme="dark"] div[class*="box"],
+[data-theme="dark"] div[class*="panel"] {
+  background-color: #1e293b !important;
+  border-color: #334155 !important;
+}
+
+/* 4. Force ALL text light (except buttons, links with colors, badges) */
+[data-theme="dark"]
+  *:not(button):not(.btn):not(a):not(.badge):not(.pill):not(.chip):not(
+    .tag
+  ):not(.status):not(.notif-badge):not(.ai-chip):not([style*="color: #"]) {
+  color: #e2e8f0 !important;
+}
+
+/* 5. Headings extra bright */
+[data-theme="dark"] h1,
+[data-theme="dark"] h2,
+[data-theme="dark"] h3,
+[data-theme="dark"] h4,
+[data-theme="dark"] h5,
+[data-theme="dark"] h6 {
+  color: #f8fafc !important;
+}
+
+/* 6. Grey sub-labels */
+[data-theme="dark"] .muted,
+[data-theme="dark"] .sub,
+[data-theme="dark"] .legend,
+[data-theme="dark"] .breadcrumb-sep,
+[data-theme="dark"] small,
+[data-theme="dark"] .text-muted {
+  color: #94a3b8 !important;
+}
+
+/* 7. Tables */
+[data-theme="dark"] table {
+  color: #cbd5e1 !important;
+  background-color: #1e293b !important;
+}
+[data-theme="dark"] th {
+  background-color: #0f172a !important;
+  color: #94a3b8 !important;
+  border-color: #334155 !important;
+}
+[data-theme="dark"] td {
+  border-color: #334155 !important;
+  color: #e2e8f0 !important;
+  background-color: #1e293b !important;
+}
+[data-theme="dark"] tr:hover {
+  background-color: #273449 !important;
+}
+
+/* 8. Inputs */
+[data-theme="dark"] input,
+[data-theme="dark"] select,
+[data-theme="dark"] textarea {
+  background-color: #0f172a !important;
+  border-color: #475569 !important;
+  color: #f1f5f9 !important;
+}
+[data-theme="dark"] input::placeholder,
+[data-theme="dark"] textarea::placeholder {
+  color: #64748b !important;
+}
+
+/* 9. Sidebar */
+[data-theme="dark"] .sidebar {
+  background-color: #0b1220 !important;
+  border-right: 1px solid #1e293b !important;
+  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.3) !important;
+}
+[data-theme="dark"] .nav-item {
+  color: #cbd5e1 !important;
+}
+[data-theme="dark"] .nav-item:hover,
+[data-theme="dark"] .nav-item.active {
+  background-color: #1e293b !important;
+  color: #fff !important;
+}
+
+/* 10. Calendar-specific fixes */
+[data-theme="dark"] .calendar,
+[data-theme="dark"] .calendar-grid,
+[data-theme="dark"] .month-view,
+[data-theme="dark"] div[class*="calendar"] {
+  background-color: #1e293b !important;
+}
+
+[data-theme="dark"] .day-cell,
+[data-theme="dark"] .calendar-day,
+[data-theme="dark"] .day,
+[data-theme="dark"] div[class*="day"] {
+  background-color: #1e293b !important;
+  border-color: #334155 !important;
+  color: #e2e8f0 !important;
+}
+
+[data-theme="dark"] .day-number,
+[data-theme="dark"] .date-number,
+[data-theme="dark"] span[class*="day"],
+[data-theme="dark"] span[class*="date"] {
+  color: #e2e8f0 !important;
+}
+
+[data-theme="dark"] .day-cell.today,
+[data-theme="dark"] .calendar-day.today {
+  border-color: #3b82f6 !important;
+  background-color: #1e3a5f !important;
+}
+
+[data-theme="dark"] .day-cell.holiday,
+[data-theme="dark"] .calendar-day.holiday {
+  background-color: #7f1d1d !important;
+  border-color: #991b1b !important;
+}
+
+[data-theme="dark"] .day-cell.holiday .day-number {
+  color: #fecaca !important;
+}
+
+/* 11. Notification dropdown */
+[data-theme="dark"] .notif-dropdown {
+  background-color: #1e293b !important;
+  border-color: #334155 !important;
+}
+[data-theme="dark"] .notif-item {
+  border-color: #334155 !important;
+}
+[data-theme="dark"] .notif-item:hover {
+  background-color: #273449 !important;
+}
+[data-theme="dark"] .notif-item.unread {
+  background-color: #1e3a5f !important;
+}
+
+/* 12. AI Chatbot */
+[data-theme="dark"] #aiFab {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6) !important;
+  color: #ffffff !important;
+  box-shadow: 0 8px 24px rgba(99, 102, 241, 0.6) !important;
+  border: none !important;
+}
+
+[data-theme="dark"] #aiFab i {
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] #aiFab:hover {
+  background: linear-gradient(135deg, #4f46e5, #7c3aed) !important;
+  transform: scale(1.08);
+}
+
+[data-theme="dark"] #aiPanel {
+  background-color: #1e293b !important;
+  border: 1px solid #334155 !important;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5) !important;
+}
+
+[data-theme="dark"] .ai-body {
+  background-color: #0f172a !important;
+}
+
+[data-theme="dark"] .ai-msg.bot {
+  background-color: #1e293b !important;
+  color: #e2e8f0 !important;
+  border-color: #334155 !important;
+}
+
+[data-theme="dark"] .ai-foot {
+  background-color: #1e293b !important;
+  border-top-color: #334155 !important;
+}
+
+[data-theme="dark"] .ai-foot input {
+  background-color: #0f172a !important;
+  border-color: #475569 !important;
+  color: #f1f5f9 !important;
+}
+
+[data-theme="dark"] .ai-chip {
+  background-color: #334155 !important;
+  color: #e0e7ff !important;
+  border-color: #475569 !important;
+}
+
+/* 13. Small badges (0 Students, 25 Dec, etc.) */
+[data-theme="dark"] .badge,
+[data-theme="dark"] .pill,
+[data-theme="dark"] .tag,
+[data-theme="dark"] .date-pill,
+[data-theme="dark"] span[class*="badge"],
+[data-theme="dark"] span[class*="pill"],
+[data-theme="dark"] span[class*="tag"] {
+  background-color: #334155 !important;
+  color: #e2e8f0 !important;
+  border-color: #475569 !important;
+}
+
+/* 14. Profile picture area */
+[data-theme="dark"] .profile-pic-container,
+[data-theme="dark"] .avatar-box,
+[data-theme="dark"] .profile-image-wrapper {
+  background-color: transparent !important;
+}
+
+[data-theme="dark"] .profile-pic,
+[data-theme="dark"] .avatar {
+  border-color: #475569 !important;
+}
+
+/* 15. Holiday/Birthday icons */
+[data-theme="dark"] .holiday-icon,
+[data-theme="dark"] .birthday-icon,
+[data-theme="dark"] .icon-circle {
+  background-color: #334155 !important;
+  color: #e2e8f0 !important;
+}
+
+/* 16. Topbar separator */
+[data-theme="dark"] .topbar {
+  border-bottom: 1px solid #334155 !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2) !important;
+}
+
+[data-theme="dark"] .main-content,
+[data-theme="dark"] .main {
+  border-left: 1px solid #1e293b !important;
+}
+
+/* 17. CLOCK IN/OUT BUTTONS - Preserve original colors */
+/* Clock In - BLUE */
+[data-theme="dark"] .btn-clock-in,
+[data-theme="dark"] button:has(.fa-right-to-bracket),
+[data-theme="dark"] #clockInBtn,
+[data-theme="dark"] .clock-in-btn {
+  background-color: #3b82f6 !important;
+  color: #ffffff !important;
+  border-color: #2563eb !important;
+}
+
+[data-theme="dark"] .btn-clock-in:hover,
+[data-theme="dark"] button:has(.fa-right-to-bracket):hover {
+  background-color: #2563eb !important;
+}
+
+/* Clock Out - RED */
+[data-theme="dark"] .btn-clock-out,
+[data-theme="dark"] button:has(.fa-right-from-bracket),
+[data-theme="dark"] #clockOutBtn,
+[data-theme="dark"] .clock-out-btn {
+  background-color: #ef4444 !important;
+  color: #ffffff !important;
+  border-color: #dc2626 !important;
+}
+
+[data-theme="dark"] .btn-clock-out:hover,
+[data-theme="dark"] button:has(.fa-right-from-bracket):hover {
+  background-color: #dc2626 !important;
+}
+
+/* Completed button - GREEN */
+[data-theme="dark"] .btn-completed,
+[data-theme="dark"] button:has(.fa-check) {
+  background-color: #10b981 !important;
+  color: #ffffff !important;
+}
+
+/* 18. Smooth transition */
+* {
+  transition:
+    background-color 0.3s ease,
+    color 0.3s ease,
+    border-color 0.3s ease;
+}

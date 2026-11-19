@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard_student.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/chatbot.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dark-mode.css') }}">
     {% block extra_css %}{% endblock %}
 </head>
 <body>
@@ -54,11 +55,39 @@
     </aside>
 
     <!-- MAIN CONTENT -->
+    <!-- MAIN CONTENT -->
     <main class="main-content">
-        <header class="topbar">
+        <header class="topbar" style="display: flex; justify-content: space-between; align-items: center;">
+            
+            <!-- 1. LEFT SIDE: Title & Breadcrumb -->
             <div class="topbar-left">
                 <h1>{% block page_title %}Dashboard{% endblock %}</h1>
                 <span class="breadcrumb-sep">Home &bull; {% block breadcrumb %}Dashboard{% endblock %}</span>
+            </div>
+            
+            <!-- 2. RIGHT SIDE: Bell & Dark Mode Toggle (ONLY ONE) -->
+            <div class="topbar-right" style="display: flex; align-items: center; gap: 15px;">
+                
+                <!-- Notification Bell -->
+                <div class="notif-container">
+                    <button class="notif-btn" id="notifBtn">
+                        <i class="fa-solid fa-bell"></i>
+                        <span class="notif-badge" id="notifBadge">0</span>
+                    </button>
+                    <div class="notif-dropdown" id="notifDropdown">
+                        <div class="notif-header">
+                            <span>Notifications</span>
+                            <button id="markAllRead" style="background:none; border:none; color:#3B82F6; cursor:pointer; font-size:0.8rem;">Mark all read</button>
+                        </div>
+                        <div id="notifList"></div>
+                    </div>
+                </div>
+                
+                <!-- Dark Mode Toggle (SINGLE, CLEAN BUTTON) -->
+                <button id="themeToggle" title="Toggle Dark Mode" style="background: none; border: 1px solid #e2e8f0; cursor: pointer; font-size: 1.1rem; color: inherit; padding: 8px 12px; border-radius: 8px; display: flex; align-items: center; gap: 8px; transition: 0.2s;">
+                    <i class="fa-solid fa-moon"></i>
+                </button>
+                
             </div>
         </header>
 
@@ -158,7 +187,54 @@
             <button id="aiSend" aria-label="Send message"><i class="fa-solid fa-paper-plane"></i></button>
         </div>
     </div>
+
     
     <script src="{{ url_for('static', filename='js/chatbot.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/dark-mode.js') }}"></script>
+
+    <script>
+    const notifBtn = document.getElementById('notifBtn');
+    const notifDropdown = document.getElementById('notifDropdown');
+    const notifBadge = document.getElementById('notifBadge');
+    const notifList = document.getElementById('notifList');
+
+    // Toggle Dropdown
+    notifBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        notifDropdown.classList.toggle('show');
+        if(notifDropdown.classList.contains('show')) loadNotifications();
+    });
+    document.addEventListener('click', () => notifDropdown.classList.remove('show'));
+
+    async function loadNotifications() {
+        const res = await fetch('/api/notifications');
+        const data = await res.json();
+        
+        notifBadge.textContent = data.unread;
+        notifBadge.style.display = data.unread > 0 ? 'block' : 'none';
+
+        if (data.notifications.length === 0) {
+            notifList.innerHTML = '<div style="padding:20px; text-align:center; color:#94A3B8;">No notifications yet.</div>';
+            return;
+        }
+
+        notifList.innerHTML = data.notifications.map(n => `
+            <div class="notif-item ${!n.is_read ? 'unread' : ''}">
+                <div class="notif-title">${n.title}</div>
+                <div class="notif-msg">${n.message}</div>
+                <div class="notif-time">${n.time}</div>
+            </div>
+        `).join('');
+    }
+
+    document.getElementById('markAllRead').addEventListener('click', async (e) => {
+        e.stopPropagation();
+        await fetch('/api/notifications/read', { method: 'POST' });
+        loadNotifications();
+    });
+
+    // Load count on page load
+    loadNotifications();
+</script>
 </body>
 </html>
